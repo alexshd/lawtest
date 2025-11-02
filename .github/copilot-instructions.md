@@ -2,9 +2,9 @@
 
 - [x] Verify that the copilot-instructions.md file in the .github directory is created.
 
-- [x] Clarify Project Requirements - goprops: property-based testing with group theory
+- [x] Clarify Project Requirements - lawtest: property-based testing with group theory
 
-- [x] Scaffold the Project - Created go.mod, goprops.go, goprops_test.go, README.md
+- [x] Scaffold the Project - Created go.mod, lawtest.go, lawtest_test.go, README.md
 
 - [x] Customize the Project - Implemented all group theory property testers
 

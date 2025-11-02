@@ -1,0 +1,8 @@
+
+# Internal development materials
+shd/
+# Python virtual environment
+.venv/
+
+# JJ version control
+.jj/

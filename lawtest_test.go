@@ -1,63 +1,63 @@
-package goprops_test
+package lawtest_test
 
 import (
-"testing"
+	"testing"
 
-"github.com/alexshd/goprops"
+	"github.com/alexshd/lawtest"
 )
 
 // Example: Testing integer addition properties
 func TestIntAddition(t *testing.T) {
 	add := func(a, b int) int { return a + b }
-	gen := goprops.IntGen(-100, 100)
+	gen := lawtest.IntGen(-100, 100)
 
 	t.Run("Associative", func(t *testing.T) {
-goprops.Associative(t, add, gen)
-})
+		lawtest.Associative(t, add, gen)
+	})
 
 	t.Run("Commutative", func(t *testing.T) {
-goprops.Commutative(t, add, gen)
-})
+		lawtest.Commutative(t, add, gen)
+	})
 
 	t.Run("Identity", func(t *testing.T) {
-goprops.Identity(t, add, 0, gen)
-})
+		lawtest.Identity(t, add, 0, gen)
+	})
 
 	t.Run("Closure", func(t *testing.T) {
-goprops.Closure(t, add, gen)
-})
+		lawtest.Closure(t, add, gen)
+	})
 }
 
 // Example: Testing integer multiplication properties
 func TestIntMultiplication(t *testing.T) {
 	mul := func(a, b int) int { return a * b }
-	gen := goprops.IntGen(-50, 50)
+	gen := lawtest.IntGen(-50, 50)
 
 	t.Run("Associative", func(t *testing.T) {
-goprops.Associative(t, mul, gen)
-})
+		lawtest.Associative(t, mul, gen)
+	})
 
 	t.Run("Commutative", func(t *testing.T) {
-goprops.Commutative(t, mul, gen)
-})
+		lawtest.Commutative(t, mul, gen)
+	})
 
 	t.Run("Identity", func(t *testing.T) {
-goprops.Identity(t, mul, 1, gen)
-})
+		lawtest.Identity(t, mul, 1, gen)
+	})
 }
 
 // Example: Testing string concatenation
 func TestStringConcat(t *testing.T) {
 	concat := func(a, b string) string { return a + b }
-	gen := goprops.StringGen(5)
+	gen := lawtest.StringGen(5)
 
 	t.Run("Associative", func(t *testing.T) {
-goprops.Associative(t, concat, gen)
-})
+		lawtest.Associative(t, concat, gen)
+	})
 
 	t.Run("Identity", func(t *testing.T) {
-goprops.Identity(t, concat, "", gen)
-})
+		lawtest.Identity(t, concat, "", gen)
+	})
 
 	// Note: String concatenation is NOT commutative
 	// "abc" + "def" != "def" + "abc"
@@ -66,24 +66,24 @@ goprops.Identity(t, concat, "", gen)
 // Example: Testing boolean operations
 func TestBooleanOr(t *testing.T) {
 	or := func(a, b bool) bool { return a || b }
-	gen := goprops.BoolGen()
+	gen := lawtest.BoolGen()
 
 	t.Run("Associative", func(t *testing.T) {
-goprops.Associative(t, or, gen)
-})
+		lawtest.Associative(t, or, gen)
+	})
 
 	t.Run("Commutative", func(t *testing.T) {
-goprops.Commutative(t, or, gen)
-})
+		lawtest.Commutative(t, or, gen)
+	})
 
 	t.Run("Identity", func(t *testing.T) {
-goprops.Identity(t, or, false, gen)
-})
+		lawtest.Identity(t, or, false, gen)
+	})
 
 	t.Run("Idempotent", func(t *testing.T) {
-idempOp := func(b bool) bool { return or(b, b) }
-goprops.Idempotent(t, idempOp, gen)
-})
+		idempOp := func(b bool) bool { return or(b, b) }
+		lawtest.Idempotent(t, idempOp, gen)
+	})
 }
 
 // Example: Custom generator for complex types
@@ -91,8 +91,8 @@ type Point struct {
 	X, Y int
 }
 
-func PointGen() goprops.Generator[Point] {
-	intGen := goprops.IntGen(-100, 100)
+func PointGen() lawtest.Generator[Point] {
+	intGen := lawtest.IntGen(-100, 100)
 	return func() Point {
 		return Point{X: intGen(), Y: intGen()}
 	}
@@ -107,23 +107,23 @@ func TestPointOperations(t *testing.T) {
 	gen := PointGen()
 
 	t.Run("Associative", func(t *testing.T) {
-goprops.Associative(t, add, gen)
-})
+		lawtest.Associative(t, add, gen)
+	})
 
 	t.Run("Commutative", func(t *testing.T) {
-goprops.Commutative(t, add, gen)
-})
+		lawtest.Commutative(t, add, gen)
+	})
 
 	t.Run("Identity", func(t *testing.T) {
-origin := Point{X: 0, Y: 0}
-goprops.Identity(t, add, origin, gen)
-})
+		origin := Point{X: 0, Y: 0}
+		lawtest.Identity(t, add, origin, gen)
+	})
 
 	t.Run("Inverse", func(t *testing.T) {
-negate := func(p Point) Point {
-return Point{X: -p.X, Y: -p.Y}
-}
-origin := Point{X: 0, Y: 0}
-goprops.Inverse(t, add, negate, origin, gen)
-})
+		negate := func(p Point) Point {
+			return Point{X: -p.X, Y: -p.Y}
+		}
+		origin := Point{X: 0, Y: 0}
+		lawtest.Inverse(t, add, negate, origin, gen)
+	})
 }
