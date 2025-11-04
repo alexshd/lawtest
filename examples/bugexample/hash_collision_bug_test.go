@@ -1,19 +1,19 @@
-// Example: Using goprops to catch the valueKey bug from plyGO
+// Example: Using lawtest to catch a hash collision bug
 //
 // This demonstrates how property-based testing with group theory
-// would have caught plyGO's valueKey bug where different slices
-// all collapsed to the same "<complex>" key.
+// can catch bugs where different values incorrectly map to the same key.
+// This pattern appears in caching systems, memoization, and data deduplication.
 package main
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/alexshd/goprops"
+	"github.com/alexshd/lawtest"
 )
 
-// Simplified version of plyGO's problematic valueKey function
-func valueKeyBuggy(v any) any {
+// Buggy hash function that maps all complex types to the same key
+func hashKeyBuggy(v any) any {
 	switch v := v.(type) {
 	case []int:
 		return "<complex>" // BUG: All slices map to same key!
@@ -25,21 +25,21 @@ func valueKeyBuggy(v any) any {
 }
 
 // Fixed version that properly distinguishes values
-func valueKeyFixed(v any) any {
+func hashKeyFixed(v any) any {
 	// Return the value itself - let Go's comparison handle it
 	// (Only works for comparable types)
 	return v
 }
 
-// Test that valueKey preserves distinctness
-// If a != b, then valueKey(a) != valueKey(b)
-func TestValueKeyPreservesDistinctness(t *testing.T) {
+// Test that hashKey preserves distinctness
+// If a != b, then hashKey(a) != hashKey(b)
+func TestHashKeyPreservesDistinctness(t *testing.T) {
 	// Generator for int slices
 	sliceGen := func() []int {
-		n := goprops.IntGen(1, 5)()
+		n := lawtest.IntGen(1, 5)()
 		slice := make([]int, n)
 		for i := range slice {
-			slice[i] = goprops.IntGen(1, 100)()
+			slice[i] = lawtest.IntGen(1, 100)()
 		}
 		return slice
 	}
@@ -52,8 +52,8 @@ func TestValueKeyPreservesDistinctness(t *testing.T) {
 
 			// If they're actually different slices
 			if !equal(a, b) {
-				keyA := valueKeyBuggy(a)
-				keyB := valueKeyBuggy(b)
+				keyA := hashKeyBuggy(a)
+				keyB := hashKeyBuggy(b)
 
 				// Keys should be different!
 				if keyA == keyB {
@@ -68,17 +68,17 @@ func TestValueKeyPreservesDistinctness(t *testing.T) {
 	})
 }
 
-// Property: valueKey should be injective (one-to-one)
-// If valueKey(a) == valueKey(b), then a == b
-func TestValueKeyInjective(t *testing.T) {
-	intGen := goprops.IntGen(1, 1000)
+// Property: hashKey should be injective (one-to-one)
+// If hashKey(a) == hashKey(b), then a == b
+func TestHashKeyInjective(t *testing.T) {
+	intGen := lawtest.IntGen(1, 1000)
 
 	t.Run("Works for primitive types", func(t *testing.T) {
 		seen := make(map[any]int)
 
 		for i := 0; i < 100; i++ {
 			val := intGen()
-			key := valueKeyFixed(val)
+			key := hashKeyFixed(val)
 
 			if prevVal, exists := seen[key]; exists {
 				// If we've seen this key before, the values should be equal
@@ -92,17 +92,17 @@ func TestValueKeyInjective(t *testing.T) {
 	})
 }
 
-// Property: valueKey should form a homomorphism
+// Property: hashKey should form a homomorphism
 // For GroupBy to work correctly, equal values must map to equal keys
-func TestValueKeyHomomorphism(t *testing.T) {
-	intGen := goprops.IntGen(1, 100)
+func TestHashKeyHomomorphism(t *testing.T) {
+	intGen := lawtest.IntGen(1, 100)
 
 	for i := 0; i < 100; i++ {
 		a := intGen()
 		b := a // Same value
 
-		keyA := valueKeyFixed(a)
-		keyB := valueKeyFixed(b)
+		keyA := hashKeyFixed(a)
+		keyB := hashKeyFixed(b)
 
 		if keyA != keyB {
 			t.Errorf("Equal values should have equal keys")
@@ -197,6 +197,6 @@ func equal(a, b []int) bool {
 }
 
 func main() {
-	fmt.Println("This example shows how goprops catches the plyGO valueKey bug")
-	fmt.Println("Run with: go test -v plygo_bug_example.go")
+	fmt.Println("This example shows how lawtest catches hash collision bugs")
+	fmt.Println("Run with: go test -v hash_collision_bug_test.go")
 }

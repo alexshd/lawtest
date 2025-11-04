@@ -1,3 +1,3 @@
-module github.com/alexshd/goprops
+module github.com/alexshd/lawtest
 
-go 1.25.3
+go 1.18
