@@ -274,9 +274,6 @@ func TestParallelSafety(t *testing.T) {
 
 	t.Run("ParallelAssociativity", func(t *testing.T) {
 		lawtest.TestParallelAssociativity(t, mergeOp, cacheGen, 10)
-	})
-
-	t.Run("Immutability", func(t *testing.T) {
 		lawtest.ImmutableOp(t, mergeOp, cacheGen)
 	})
 }
@@ -363,14 +360,14 @@ func TestCustomEqualityFunctions(t *testing.T) {
 	}
 
 	t.Run("AssociativeCustom", func(t *testing.T) {
-lawtest.AssociativeCustom(t, merge, gen, eq)
-})
+		lawtest.AssociativeCustom(t, merge, gen, eq)
+	})
 
 	t.Run("ImmutableOpCustom", func(t *testing.T) {
-lawtest.ImmutableOpCustom(t, merge, gen, eq)
-})
+		lawtest.ImmutableOpCustom(t, merge, gen, eq)
+	})
 
 	t.Run("ParallelSafeCustom", func(t *testing.T) {
-lawtest.ParallelSafeCustom(t, merge, gen, eq, 10)
-})
+		lawtest.ParallelSafeCustom(t, merge, gen, eq, 10)
+	})
 }
