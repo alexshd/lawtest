@@ -371,3 +371,114 @@ func TestCustomEqualityFunctions(t *testing.T) {
 		lawtest.ParallelSafeCustom(t, merge, gen, eq, 10)
 	})
 }
+
+// Testing tail recursion optimization equivalence
+func TestTailRecursionEquivalence(t *testing.T) {
+	// Original recursive factorial
+	var factorial func(int) int
+	factorial = func(n int) int {
+		if n <= 1 {
+			return 1
+		}
+		return n * factorial(n-1)
+	}
+
+	// Tail recursive factorial with accumulator
+	var factorialTail func(int, int) int
+	factorialTail = func(n, acc int) int {
+		if n <= 1 {
+			return acc
+		}
+		return factorialTail(n-1, n*acc)
+	}
+
+	// Prove they're equivalent
+	gen := func() int { return rand.Intn(15) + 1 } // Keep small to avoid overflow
+
+	t.Run("Factorial_Equivalence", func(t *testing.T) {
+		lawtest.Equivalent(t,
+			func(n int) int { return factorial(n) },
+			func(n int) int { return factorialTail(n, 1) },
+			gen,
+		)
+	})
+}
+
+// Testing recursive vs iterative list operations
+func TestListReverseEquivalence(t *testing.T) {
+	// Recursive reverse
+	var reverseRecursive func([]int) []int
+	reverseRecursive = func(list []int) []int {
+		if len(list) == 0 {
+			return []int{}
+		}
+		return append(reverseRecursive(list[1:]), list[0])
+	}
+
+	// Iterative reverse
+	reverseIterative := func(list []int) []int {
+		result := make([]int, len(list))
+		for i := range list {
+			result[len(list)-1-i] = list[i]
+		}
+		return result
+	}
+
+	// Generator for random lists
+	gen := func() []int {
+		n := rand.Intn(10) + 1
+		list := make([]int, n)
+		for i := range list {
+			list[i] = rand.Intn(100)
+		}
+		return list
+	}
+
+	// Custom equality for slices
+	eq := func(a, b []int) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	t.Run("Reverse_Equivalence", func(t *testing.T) {
+		lawtest.EquivalentCustom(t, reverseRecursive, reverseIterative, gen, eq)
+	})
+}
+
+// Testing fibonacci implementations
+func TestFibonacciEquivalence(t *testing.T) {
+	// Naive recursive fibonacci (slow)
+	var fibRecursive func(int) int
+	fibRecursive = func(n int) int {
+		if n <= 1 {
+			return n
+		}
+		return fibRecursive(n-1) + fibRecursive(n-2)
+	}
+
+	// Iterative fibonacci (fast)
+	fibIterative := func(n int) int {
+		if n <= 1 {
+			return n
+		}
+		a, b := 0, 1
+		for i := 2; i <= n; i++ {
+			a, b = b, a+b
+		}
+		return b
+	}
+
+	// Keep n small for recursive version
+	gen := func() int { return rand.Intn(20) }
+
+	t.Run("Fibonacci_Equivalence", func(t *testing.T) {
+		lawtest.Equivalent(t, fibRecursive, fibIterative, gen)
+	})
+}

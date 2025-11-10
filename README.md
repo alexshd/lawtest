@@ -62,11 +62,25 @@ func TestMergeCommutative(t *testing.T) {
 - **Closure**: `a ∘ b` produces same type as inputs
 - **Idempotent**: `f(f(x)) = f(x)`
 
-### Concurrency Safety (New!)
+### Concurrency Safety
 
 - **ParallelSafe**: Can operations run concurrently without race conditions?
 - **ImmutableOp**: Does the operation mutate its inputs?
 - **TestParallelAssociativity**: Do properties hold under concurrent execution?
+
+### Equivalence Testing (New!)
+
+- **Equivalent**: Do two functions produce the same output for all inputs?
+- **EquivalentCustom**: Test equivalence with custom equality for non-comparable types
+
+Perfect for verifying:
+
+- Tail recursion optimizations
+- Iterative vs recursive implementations
+- Cached/memoized versions
+- Algorithm refactoring
+
+See [examples/tail_recursion](examples/tail_recursion) for detailed examples.
 
 ## Requirements
 

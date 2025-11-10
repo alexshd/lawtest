@@ -1166,11 +1166,11 @@ func ImmutableOpWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Gener
 //
 // Example:
 //
-//      type State struct { items []int }
-//      merge := func(a, b State) State { ... }
-//      gen := func() State { return State{items: []int{1,2,3}} }
-//      eq := func(a, b State) bool { return reflect.DeepEqual(a.items, b.items) }
-//      lawtest.AssociativeCustom(t, merge, gen, eq)
+//	type State struct { items []int }
+//	merge := func(a, b State) State { ... }
+//	gen := func() State { return State{items: []int{1,2,3}} }
+//	eq := func(a, b State) bool { return reflect.DeepEqual(a.items, b.items) }
+//	lawtest.AssociativeCustom(t, merge, gen, eq)
 func AssociativeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) {
 	AssociativeCustomWithConfig(t, op, gen, eq, DefaultConfig())
 }
@@ -1190,7 +1190,7 @@ func AssociativeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Genera
 
 		if !eq(left, right) {
 			t.Errorf("Associativity failed: (a∘b)∘c != a∘(b∘c)\n  a=%v, b=%v, c=%v\n  left=%v, right=%v",
-a, b, c, left, right)
+				a, b, c, left, right)
 			return
 		}
 	}
@@ -1203,11 +1203,11 @@ a, b, c, left, right)
 //
 // Example:
 //
-//      type State struct { data map[string]int }
-//      merge := func(a, b State) State { ... }
-//      gen := func() State { return State{data: map[string]int{"x": 1}} }
-//      eq := func(a, b State) bool { return reflect.DeepEqual(a.data, b.data) }
-//      lawtest.ImmutableOpCustom(t, merge, gen, eq)
+//	type State struct { data map[string]int }
+//	merge := func(a, b State) State { ... }
+//	gen := func() State { return State{data: map[string]int{"x": 1}} }
+//	eq := func(a, b State) bool { return reflect.DeepEqual(a.data, b.data) }
+//	lawtest.ImmutableOpCustom(t, merge, gen, eq)
 func ImmutableOpCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) {
 	ImmutableOpCustomWithConfig(t, op, gen, eq, DefaultConfig())
 }
@@ -1231,13 +1231,13 @@ func ImmutableOpCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Genera
 		// Check if inputs were mutated using custom equality
 		if !eq(a, aOriginal) {
 			t.Errorf("Immutability violated: operation mutated first argument\n  before=%v, after=%v",
-aOriginal, a)
+				aOriginal, a)
 			return
 		}
 
 		if !eq(b, bOriginal) {
 			t.Errorf("Immutability violated: operation mutated second argument\n  before=%v, after=%v",
-bOriginal, b)
+				bOriginal, b)
 			return
 		}
 	}
@@ -1250,11 +1250,11 @@ bOriginal, b)
 //
 // Example:
 //
-//      type Cache struct { data map[string]string }
-//      merge := func(a, b Cache) Cache { ... }
-//      gen := func() Cache { return Cache{data: map[string]string{"x": "y"}} }
-//      eq := func(a, b Cache) bool { return reflect.DeepEqual(a.data, b.data) }
-//      lawtest.ParallelSafeCustom(t, merge, gen, eq, 100)
+//	type Cache struct { data map[string]string }
+//	merge := func(a, b Cache) Cache { ... }
+//	gen := func() Cache { return Cache{data: map[string]string{"x": "y"}} }
+//	eq := func(a, b Cache) bool { return reflect.DeepEqual(a.data, b.data) }
+//	lawtest.ParallelSafeCustom(t, merge, gen, eq, 100)
 func ParallelSafeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, goroutines int) bool {
 	return ParallelSafeCustomWithConfig(t, op, gen, eq, goroutines, DefaultConfig())
 }
@@ -1289,11 +1289,129 @@ func ParallelSafeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Gener
 	for i, result := range results {
 		if !eq(result, expected) {
 			t.Errorf("Parallel safety failed: goroutine %d produced different result\n  expected=%v, got=%v",
-i, expected, result)
+				i, expected, result)
 			return false
 		}
 	}
 
 	t.Logf("✅ Operation appears parallel-safe (no race conditions in %d goroutines)", goroutines)
+	return true
+}
+
+// Equivalent tests if two functions produce the same output for all inputs.
+//
+// This is useful for verifying that optimized implementations (tail recursion,
+// iterative versions, cached versions) produce the same results as the original.
+//
+// Example:
+//
+//	// Original recursive
+//	func Factorial(n int) int {
+//	    if n <= 1 { return 1 }
+//	    return n * Factorial(n-1)
+//	}
+//
+//	// Tail optimized version
+//	func FactorialTail(n, acc int) int {
+//	    if n <= 1 { return acc }
+//	    return FactorialTail(n-1, n*acc)
+//	}
+//
+//	// Prove they're equivalent
+//	func TestTailOptimization(t *testing.T) {
+//	    gen := func() int { return rand.Intn(20) + 1 }
+//	    lawtest.Equivalent(t,
+//	        func(n int) int { return Factorial(n) },
+//	        func(n int) int { return FactorialTail(n, 1) },
+//	        gen,
+//	    )
+//	}
+//
+// Parameters:
+//   - t: testing.T instance
+//   - f1: first function to compare
+//   - f2: second function to compare
+//   - gen: generator function for random test inputs
+//
+// Returns true if both functions produce the same output for all test cases.
+func Equivalent[T any, R comparable](t *testing.T, f1, f2 func(T) R, gen func() T) bool {
+	t.Helper()
+	iterations := 100
+
+	for i := 0; i < iterations; i++ {
+		input := gen()
+		result1 := f1(input)
+		result2 := f2(input)
+
+		if result1 != result2 {
+			t.Errorf("Functions not equivalent at iteration %d\n  input=%v\n  f1(input)=%v\n  f2(input)=%v",
+				i, input, result1, result2)
+			return false
+		}
+	}
+
+	t.Logf("✅ Functions are equivalent (tested %d random inputs)", iterations)
+	return true
+}
+
+// EquivalentCustom tests if two functions produce the same output for all inputs,
+// using a custom equality function for non-comparable output types.
+//
+// This extends Equivalent to work with slices, maps, structs without comparable fields, etc.
+//
+// Example:
+//
+//	// Recursive list reverse
+//	func ReverseRecursive(list []int) []int {
+//	    if len(list) == 0 { return []int{} }
+//	    return append(ReverseRecursive(list[1:]), list[0])
+//	}
+//
+//	// Iterative list reverse
+//	func ReverseIterative(list []int) []int {
+//	    result := make([]int, len(list))
+//	    for i := range list {
+//	        result[len(list)-1-i] = list[i]
+//	    }
+//	    return result
+//	}
+//
+//	// Prove they're equivalent
+//	func TestReverseEquivalent(t *testing.T) {
+//	    gen := func() []int {
+//	        n := rand.Intn(10)
+//	        list := make([]int, n)
+//	        for i := range list { list[i] = rand.Intn(100) }
+//	        return list
+//	    }
+//	    eq := func(a, b []int) bool { return reflect.DeepEqual(a, b) }
+//	    lawtest.EquivalentCustom(t, ReverseRecursive, ReverseIterative, gen, eq)
+//	}
+//
+// Parameters:
+//   - t: testing.T instance
+//   - f1: first function to compare
+//   - f2: second function to compare
+//   - gen: generator function for random test inputs
+//   - eq: custom equality function for comparing outputs
+//
+// Returns true if both functions produce equal output for all test cases.
+func EquivalentCustom[T any, R any](t *testing.T, f1, f2 func(T) R, gen func() T, eq func(R, R) bool) bool {
+	t.Helper()
+	iterations := 100
+
+	for i := 0; i < iterations; i++ {
+		input := gen()
+		result1 := f1(input)
+		result2 := f2(input)
+
+		if !eq(result1, result2) {
+			t.Errorf("Functions not equivalent at iteration %d\n  input=%v\n  f1(input)=%v\n  f2(input)=%v",
+				i, input, result1, result2)
+			return false
+		}
+	}
+
+	t.Logf("✅ Functions are equivalent (tested %d random inputs)", iterations)
 	return true
 }
