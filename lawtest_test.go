@@ -253,16 +253,16 @@ type SafeCache struct {
 	value int
 }
 
-func (c *SafeCache) Merge(other *SafeCache) *SafeCache {
-	return &SafeCache{value: c.value + other.value}
+func (c SafeCache) Merge(other SafeCache) SafeCache {
+	return SafeCache{value: c.value + other.value}
 }
 
 func TestParallelSafety(t *testing.T) {
-	mergeOp := func(a, b *SafeCache) *SafeCache {
+	mergeOp := func(a, b SafeCache) SafeCache {
 		return a.Merge(b)
 	}
-	cacheGen := func() *SafeCache {
-		return &SafeCache{value: rand.Intn(100)}
+	cacheGen := func() SafeCache {
+		return SafeCache{value: rand.Intn(100)}
 	}
 
 	t.Run("ParallelSafe", func(t *testing.T) {
@@ -330,4 +330,47 @@ func TestGeneratorEdgeCases(t *testing.T) {
 		}()
 		_ = lawtest.Float64Gen(10.0, 5.0)
 	})
+}
+
+// TestCustomEqualityFunctions tests the *Custom functions with non-comparable types
+func TestCustomEqualityFunctions(t *testing.T) {
+	// Type with slice (not comparable)
+	type SliceState struct {
+		items []int
+	}
+
+	merge := func(a, b SliceState) SliceState {
+		result := make([]int, 0, len(a.items)+len(b.items))
+		result = append(result, a.items...)
+		result = append(result, b.items...)
+		return SliceState{items: result}
+	}
+
+	gen := func() SliceState {
+		return SliceState{items: []int{rand.Intn(10), rand.Intn(10)}}
+	}
+
+	eq := func(a, b SliceState) bool {
+		if len(a.items) != len(b.items) {
+			return false
+		}
+		for i := range a.items {
+			if a.items[i] != b.items[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	t.Run("AssociativeCustom", func(t *testing.T) {
+lawtest.AssociativeCustom(t, merge, gen, eq)
+})
+
+	t.Run("ImmutableOpCustom", func(t *testing.T) {
+lawtest.ImmutableOpCustom(t, merge, gen, eq)
+})
+
+	t.Run("ParallelSafeCustom", func(t *testing.T) {
+lawtest.ParallelSafeCustom(t, merge, gen, eq, 10)
+})
 }

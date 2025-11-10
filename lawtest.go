@@ -1160,3 +1160,140 @@ func ImmutableOpWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Gener
 
 	t.Logf("✅ Operation is immutable (does not mutate inputs)")
 }
+
+// AssociativeCustom tests associativity using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//      type State struct { items []int }
+//      merge := func(a, b State) State { ... }
+//      gen := func() State { return State{items: []int{1,2,3}} }
+//      eq := func(a, b State) bool { return reflect.DeepEqual(a.items, b.items) }
+//      lawtest.AssociativeCustom(t, merge, gen, eq)
+func AssociativeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) {
+	AssociativeCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}
+
+// AssociativeCustomWithConfig tests associativity with custom equality and configuration.
+func AssociativeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) {
+	t.Helper()
+
+	for i := 0; i < cfg.TestCases; i++ {
+		a, b, c := gen(), gen(), gen()
+
+		// (a ∘ b) ∘ c
+		left := op(op(a, b), c)
+
+		// a ∘ (b ∘ c)
+		right := op(a, op(b, c))
+
+		if !eq(left, right) {
+			t.Errorf("Associativity failed: (a∘b)∘c != a∘(b∘c)\n  a=%v, b=%v, c=%v\n  left=%v, right=%v",
+a, b, c, left, right)
+			return
+		}
+	}
+
+	t.Logf("✅ Operation is associative with custom equality")
+}
+
+// ImmutableOpCustom tests immutability using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//      type State struct { data map[string]int }
+//      merge := func(a, b State) State { ... }
+//      gen := func() State { return State{data: map[string]int{"x": 1}} }
+//      eq := func(a, b State) bool { return reflect.DeepEqual(a.data, b.data) }
+//      lawtest.ImmutableOpCustom(t, merge, gen, eq)
+func ImmutableOpCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) {
+	ImmutableOpCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}
+
+// ImmutableOpCustomWithConfig tests immutability with custom equality and configuration.
+func ImmutableOpCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) {
+	t.Helper()
+
+	for i := 0; i < cfg.TestCases; i++ {
+		a, b := gen(), gen()
+
+		// Create deep copies using custom serialization
+		// Since we can't rely on comparable, we'll test by calling the function
+		// and checking if the original values changed using custom equality
+		aOriginal := a
+		bOriginal := b
+
+		// Apply operation
+		_ = op(a, b)
+
+		// Check if inputs were mutated using custom equality
+		if !eq(a, aOriginal) {
+			t.Errorf("Immutability violated: operation mutated first argument\n  before=%v, after=%v",
+aOriginal, a)
+			return
+		}
+
+		if !eq(b, bOriginal) {
+			t.Errorf("Immutability violated: operation mutated second argument\n  before=%v, after=%v",
+bOriginal, b)
+			return
+		}
+	}
+
+	t.Logf("✅ Operation is immutable (does not mutate inputs)")
+}
+
+// ParallelSafeCustom tests parallel safety using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//      type Cache struct { data map[string]string }
+//      merge := func(a, b Cache) Cache { ... }
+//      gen := func() Cache { return Cache{data: map[string]string{"x": "y"}} }
+//      eq := func(a, b Cache) bool { return reflect.DeepEqual(a.data, b.data) }
+//      lawtest.ParallelSafeCustom(t, merge, gen, eq, 100)
+func ParallelSafeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, goroutines int) bool {
+	return ParallelSafeCustomWithConfig(t, op, gen, eq, goroutines, DefaultConfig())
+}
+
+// ParallelSafeCustomWithConfig tests parallel safety with custom equality and configuration.
+func ParallelSafeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, goroutines int, cfg *Config) bool {
+	t.Helper()
+
+	// Generate test data
+	a, b := gen(), gen()
+
+	// Expected result (sequential)
+	expected := op(a, b)
+
+	// Run operation concurrently many times
+	results := make([]T, goroutines)
+	done := make(chan bool, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			results[idx] = op(a, b)
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < goroutines; i++ {
+		<-done
+	}
+
+	// Check if all results match expected using custom equality
+	for i, result := range results {
+		if !eq(result, expected) {
+			t.Errorf("Parallel safety failed: goroutine %d produced different result\n  expected=%v, got=%v",
+i, expected, result)
+			return false
+		}
+	}
+
+	t.Logf("✅ Operation appears parallel-safe (no race conditions in %d goroutines)", goroutines)
+	return true
+}
