@@ -1,5 +1,3 @@
-// Package tailrecursion demonstrates how to use lawtest to verify
-// tail call optimizations produce equivalent results to recursive implementations.
 package tailrecursion
 
 // Factorial computes n! using standard recursion.
@@ -76,6 +74,38 @@ func FibonacciIterative(n int) int {
 		a, b = b, a+b
 	}
 	return b
+}
+
+// FibonacciIter computes Fibonacci using Go 1.23+ iterators.
+// Consumes the iterator sequence up to index n.
+func FibonacciIter(n int) int {
+	if n <= 1 {
+		return n
+	}
+	var result int
+	for i, fib := range FibSeq() {
+		if i == n {
+			result = fib
+			break
+		}
+	}
+	return result
+}
+
+// FibSeq returns an iterator that yields Fibonacci numbers indefinitely.
+// Usage: for i, fib := range FibSeq() { ... }
+func FibSeq() func(yield func(int, int) bool) {
+	return func(yield func(int, int) bool) {
+		a, b := 0, 1
+		i := 0
+		for {
+			if !yield(i, a) {
+				return
+			}
+			i++
+			a, b = b, a+b
+		}
+	}
 }
 
 // Power computes base^exp using recursion.

@@ -94,9 +94,28 @@ import (
 	"time"
 )
 
-const (
-	defaultTestCases = 100 // Number of random test cases to generate
-)
+// DefaultTestCases is the default number of random test cases to generate.
+//
+// You can modify this globally for all tests:
+//
+//	func init() {
+//	    lawtest.DefaultTestCases = 1000 // Use 1000 cases by default
+//	}
+//
+// Or customize per test using Config:
+//
+//	cfg := &lawtest.Config{TestCases: 10000}
+//	lawtest.AssociativeWithConfig(t, op, gen, cfg)
+//
+// Statistical reasoning:
+//   - 100 cases (default): Catches most bugs quickly
+//   - 1,000 cases: High confidence, reasonable test time
+//   - 10,000 cases: Very high confidence, slower tests
+//   - 100,000 cases: Extremely thorough, significant time cost
+//
+// Note: Property testing finds bugs probabilistically, not with mathematical proof.
+// No finite number of tests proves correctness for ALL possible inputs.
+var DefaultTestCases = 100
 
 // BinaryOp is a binary operation that combines two values of type T.
 //
@@ -160,7 +179,7 @@ type Config struct {
 //	cfg.TestCases = 200 // Customize as needed
 func DefaultConfig() *Config {
 	return &Config{
-		TestCases: defaultTestCases,
+		TestCases: DefaultTestCases,
 		Timeout:   5 * time.Second,
 	}
 }
