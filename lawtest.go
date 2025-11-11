@@ -94,28 +94,8 @@ import (
 	"time"
 )
 
-// DefaultTestCases is the default number of random test cases to generate.
-//
-// You can modify this globally for all tests:
-//
-//	func init() {
-//	    lawtest.DefaultTestCases = 1000 // Use 1000 cases by default
-//	}
-//
-// Or customize per test using Config:
-//
-//	cfg := &lawtest.Config{TestCases: 10000}
-//	lawtest.AssociativeWithConfig(t, op, gen, cfg)
-//
-// Statistical reasoning:
-//   - 100 cases (default): Catches most bugs quickly
-//   - 1,000 cases: High confidence, reasonable test time
-//   - 10,000 cases: Very high confidence, slower tests
-//   - 100,000 cases: Extremely thorough, significant time cost
-//
-// Note: Property testing finds bugs probabilistically, not with mathematical proof.
-// No finite number of tests proves correctness for ALL possible inputs.
-var DefaultTestCases = 100
+// defaultTestCases is the default number of random test cases to generate.
+const defaultTestCases = 100
 
 // BinaryOp is a binary operation that combines two values of type T.
 //
@@ -179,7 +159,7 @@ type Config struct {
 //	cfg.TestCases = 200 // Customize as needed
 func DefaultConfig() *Config {
 	return &Config{
-		TestCases: DefaultTestCases,
+		TestCases: defaultTestCases,
 		Timeout:   5 * time.Second,
 	}
 }
@@ -1355,7 +1335,7 @@ func ParallelSafeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Gener
 // Returns true if both functions produce the same output for all test cases.
 func Equivalent[T any, R comparable](t *testing.T, f1, f2 func(T) R, gen func() T) bool {
 	t.Helper()
-	iterations := 100
+	iterations := defaultTestCases
 
 	for i := 0; i < iterations; i++ {
 		input := gen()
@@ -1417,7 +1397,7 @@ func Equivalent[T any, R comparable](t *testing.T, f1, f2 func(T) R, gen func() 
 // Returns true if both functions produce equal output for all test cases.
 func EquivalentCustom[T any, R any](t *testing.T, f1, f2 func(T) R, gen func() T, eq func(R, R) bool) bool {
 	t.Helper()
-	iterations := 100
+	iterations := defaultTestCases
 
 	for i := 0; i < iterations; i++ {
 		input := gen()
