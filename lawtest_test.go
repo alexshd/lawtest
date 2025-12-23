@@ -1,484 +1,237 @@
-package lawtest_test
+package lawtest
 
 import (
-	"math/rand"
 	"testing"
-
-	"github.com/alexshd/lawtest"
+	"time"
 )
 
-// Testing integer addition properties
-func TestIntAddition(t *testing.T) {
-	addOp := func(a, b int) int { return a + b }
-	intGen := lawtest.IntGen(-100, 100)
+// ===========================================================================
+// FLUENT API TESTS
+// ===========================================================================
 
-	t.Run("Associative", func(t *testing.T) {
-		lawtest.Associative(t, addOp, intGen)
-	})
+func TestFluentAPI_IntegerAddition(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
 
-	t.Run("Commutative", func(t *testing.T) {
-		lawtest.Commutative(t, addOp, intGen)
-	})
-
-	t.Run("Identity", func(t *testing.T) {
-		lawtest.Identity(t, addOp, 0, intGen)
-	})
-
-	t.Run("Closure", func(t *testing.T) {
-		lawtest.Closure(t, addOp, intGen)
-	})
-
-	t.Run("Inverse", func(t *testing.T) {
-		negateOp := func(x int) int { return -x }
-		lawtest.Inverse(t, addOp, negateOp, 0, intGen)
-	})
+	law := For(t, gen, eq)
+	law.Associative(add)
+	law.Commutative(add)
 }
 
-// Testing integer multiplication properties
-func TestIntMultiplication(t *testing.T) {
-	mulOp := func(a, b int) int { return a * b }
-	intGen := lawtest.IntGen(-50, 50)
+func TestFluentAPI_Group(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+	neg := func(a int) int { return -a }
 
-	t.Run("Associative", func(t *testing.T) {
-		lawtest.Associative(t, mulOp, intGen)
-	})
-
-	t.Run("Commutative", func(t *testing.T) {
-		lawtest.Commutative(t, mulOp, intGen)
-	})
-
-	t.Run("Identity", func(t *testing.T) {
-		lawtest.Identity(t, mulOp, 1, intGen)
-	})
+	law := For(t, gen, eq)
+	law.Group(add, neg, 0)
 }
 
-// Testing string concatenation
-func TestStringConcat(t *testing.T) {
-	concatOp := func(a, b string) string { return a + b }
-	strGen := lawtest.StringGen(5)
+func TestFluentAPI_AbelianGroup(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+	neg := func(a int) int { return -a }
 
-	t.Run("Associative", func(t *testing.T) {
-		lawtest.Associative(t, concatOp, strGen)
-	})
-
-	t.Run("Identity", func(t *testing.T) {
-		lawtest.Identity(t, concatOp, "", strGen)
-	})
+	law := For(t, gen, eq)
+	law.AbelianGroup(add, neg, 0)
 }
 
-// Testing boolean operations
-func TestBooleanOr(t *testing.T) {
-	orOp := func(a, b bool) bool { return a || b }
-	boolGen := lawtest.BoolGen()
+func TestFluentAPI_WithOptions(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+	neg := func(a int) int { return -a }
 
-	t.Run("Associative", func(t *testing.T) {
-		lawtest.Associative(t, orOp, boolGen)
-	})
-
-	t.Run("Commutative", func(t *testing.T) {
-		lawtest.Commutative(t, orOp, boolGen)
-	})
-
-	t.Run("Identity", func(t *testing.T) {
-		lawtest.Identity(t, orOp, false, boolGen)
-	})
-
-	t.Run("Idempotent", func(t *testing.T) {
-		idempOp := func(b bool) bool { return orOp(b, b) }
-		lawtest.Idempotent(t, idempOp, boolGen)
-	})
+	law := For(t, gen, eq).With(WithTrials(50))
+	law.AbelianGroup(add, neg, 0)
 }
 
-// Testing Float64Gen generator
-func TestFloat64Operations(t *testing.T) {
-	mulOp := func(a, b float64) float64 { return a * b }
-	floatGen := lawtest.Float64Gen(1.0, 10.0)
-
-	t.Run("Commutative", func(t *testing.T) {
-		lawtest.Commutative(t, mulOp, floatGen)
-	})
-}
-
-// Custom generator for complex types
-type Point struct {
-	X, Y int
-}
-
-func TestPointOperations(t *testing.T) {
-	pointGen := func() Point {
-		intGen := lawtest.IntGen(-100, 100)
-		return Point{X: intGen(), Y: intGen()}
-	}
-
-	addOp := func(a, b Point) Point {
-		return Point{X: a.X + b.X, Y: a.Y + b.Y}
-	}
-
-	t.Run("Associative", func(t *testing.T) {
-		lawtest.Associative(t, addOp, pointGen)
-	})
-
-	t.Run("Commutative", func(t *testing.T) {
-		lawtest.Commutative(t, addOp, pointGen)
-	})
-
-	t.Run("Identity", func(t *testing.T) {
-		origin := Point{X: 0, Y: 0}
-		lawtest.Identity(t, addOp, origin, pointGen)
-	})
-
-	t.Run("Inverse", func(t *testing.T) {
-		negateOp := func(p Point) Point {
-			return Point{X: -p.X, Y: -p.Y}
+func TestFluentAPI_Idempotent(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	abs := func(x int) int {
+		if x < 0 {
+			return -x
 		}
-		origin := Point{X: 0, Y: 0}
-		lawtest.Inverse(t, addOp, negateOp, origin, pointGen)
-	})
-}
-
-// Test interface-based Group implementation
-type IntModGroup struct {
-	modulus int
-}
-
-func (g IntModGroup) Op(a, b int) int {
-	return (a + b) % g.modulus
-}
-
-func (g IntModGroup) Identity() int {
-	return 0
-}
-
-func (g IntModGroup) Inverse(a int) int {
-	return (g.modulus - a) % g.modulus
-}
-
-func (g IntModGroup) Gen() int {
-	return rand.Intn(g.modulus)
-}
-
-func TestIntModGroup(t *testing.T) {
-	modGroup := IntModGroup{modulus: 12}
-	lawtest.TestGroup[int](t, modGroup)
-}
-
-// Test interface-based Monoid implementation
-type StringConcatMonoid struct{}
-
-func (m StringConcatMonoid) Op(a, b string) string {
-	return a + b
-}
-
-func (m StringConcatMonoid) Identity() string {
-	return ""
-}
-
-func (m StringConcatMonoid) Gen() string {
-	return lawtest.StringGen(5)()
-}
-
-func TestStringConcatMonoid(t *testing.T) {
-	monoid := StringConcatMonoid{}
-	lawtest.TestMonoid[string](t, monoid)
-}
-
-// Test interface-based Semigroup implementation
-type MaxSemigroup struct{}
-
-func (s MaxSemigroup) Op(a, b int) int {
-	if a > b {
-		return a
+		return x
 	}
-	return b
+
+	law := For(t, gen, eq)
+	law.Idempotent(abs)
 }
 
-func (s MaxSemigroup) Gen() int {
-	return lawtest.IntGen(1, 1000)()
+func TestFluentAPI_Immutable(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+
+	law := For(t, gen, eq)
+	law.Immutable(add)
 }
 
-func TestMaxSemigroup(t *testing.T) {
-	semigroup := MaxSemigroup{}
-	lawtest.TestSemigroup[int](t, semigroup)
+func TestFluentAPI_ParallelSafe(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+
+	law := For(t, gen, eq)
+	law.ParallelSafe(add, 10)
 }
 
-// Test interface-based IdempotentOp implementation
-type AbsoluteValue struct{}
+// ===========================================================================
+// VECTOR SPACE TESTS
+// ===========================================================================
 
-func (o AbsoluteValue) Apply(x int) int {
-	if x < 0 {
+// Z3 scalar type for vector space tests
+type z3 int8
+
+const (
+	z3Zero z3 = 0
+	z3One  z3 = 1
+	z3Two  z3 = 2
+)
+
+func z3Add(a, b z3) z3 { return z3((int(a) + int(b)) % 3) }
+func z3Mul(a, b z3) z3 { return z3((int(a) * int(b)) % 3) }
+func z3Neg(a z3) z3    { return z3((3 - int(a)) % 3) }
+
+// Simple 2D Z3 vector
+type vec2 struct{ x, y z3 }
+
+func vec2Add(a, b vec2) vec2 { return vec2{z3Add(a.x, b.x), z3Add(a.y, b.y)} }
+func vec2Neg(a vec2) vec2    { return vec2{z3Neg(a.x), z3Neg(a.y)} }
+func vec2Scale(s z3, v vec2) vec2 {
+	return vec2{z3Mul(s, v.x), z3Mul(s, v.y)}
+}
+func vec2Eq(a, b vec2) bool { return a.x == b.x && a.y == b.y }
+func vec2Gen() vec2         { return vec2{z3(IntGen(0, 2)()), z3(IntGen(0, 2)())} }
+func z3Gen() z3             { return z3(IntGen(0, 2)()) }
+
+func TestFluentAPI_VectorSpace(t *testing.T) {
+	vs := ForVectorSpace(t, vec2Gen, z3Gen, vec2Eq)
+	vs.Axioms(
+		vec2Add,
+		vec2{z3Zero, z3Zero},
+		vec2Neg,
+		vec2Scale,
+		z3Add,
+		z3Mul,
+		z3One,
+	)
+}
+
+// ===========================================================================
+// OPTIONS TESTS
+// ===========================================================================
+
+func TestOptions_WithTrials(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+
+	// Low trials
+	law := For(t, gen, eq).With(WithTrials(10))
+	law.Associative(add)
+
+	// High trials
+	law2 := For(t, gen, eq).With(WithTrials(500))
+	law2.Associative(add)
+}
+
+func TestOptions_VectorSpaceWith(t *testing.T) {
+	vs := ForVectorSpace(t, vec2Gen, z3Gen, vec2Eq).With(WithTrials(50))
+	vs.Axioms(
+		vec2Add,
+		vec2{z3Zero, z3Zero},
+		vec2Neg,
+		vec2Scale,
+		z3Add,
+		z3Mul,
+		z3One,
+	)
+}
+
+func TestOptions_WithTimeout(t *testing.T) {
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
+	add := func(a, b int) int { return a + b }
+
+	law := For(t, gen, eq).With(WithTimeout(10 * time.Second))
+	law.Associative(add)
+}
+
+// ===========================================================================
+// GENERATOR TESTS
+// ===========================================================================
+
+func TestIntGen(t *testing.T) {
+	gen := IntGen(-10, 10)
+	for i := 0; i < 100; i++ {
+		v := gen()
+		if v < -10 || v > 10 {
+			t.Errorf("IntGen out of range: %d", v)
+		}
+	}
+}
+
+func TestStringGen(t *testing.T) {
+	gen := StringGen(8)
+	for i := 0; i < 10; i++ {
+		s := gen()
+		if len(s) != 8 {
+			t.Errorf("StringGen wrong length: %d", len(s))
+		}
+	}
+}
+
+func TestFloat64Gen(t *testing.T) {
+	gen := Float64Gen(0.0, 1.0)
+	for i := 0; i < 100; i++ {
+		v := gen()
+		if v < 0.0 || v > 1.0 {
+			t.Errorf("Float64Gen out of range: %f", v)
+		}
+	}
+}
+
+func TestBoolGen(t *testing.T) {
+	gen := BoolGen()
+	trueCount := 0
+	for i := 0; i < 100; i++ {
+		if gen() {
+			trueCount++
+		}
+	}
+	// Should have some of each
+	if trueCount == 0 || trueCount == 100 {
+		t.Errorf("BoolGen not random: %d trues", trueCount)
+	}
+}
+
+// ===========================================================================
+// EQUIVALENCE TESTS
+// ===========================================================================
+
+func TestEquivalent(t *testing.T) {
+	// Two ways to compute absolute value
+	abs1 := func(x int) int {
+		if x < 0 {
+			return -x
+		}
+		return x
+	}
+	abs2 := func(x int) int {
+		if x >= 0 {
+			return x
+		}
 		return -x
 	}
-	return x
-}
 
-func (o AbsoluteValue) Gen() int {
-	return lawtest.IntGen(-100, 100)()
-}
+	gen := func() int { return IntGen(-100, 100)() }
+	eq := func(a, b int) bool { return a == b }
 
-func TestAbsoluteValueIdempotent(t *testing.T) {
-	absOp := AbsoluteValue{}
-	lawtest.TestIdempotentOp[int](t, absOp)
-}
-
-// Test Homomorphism - simple valid example
-type IntAdditionGroup struct{}
-
-func (g IntAdditionGroup) Op(a, b int) int   { return a + b }
-func (g IntAdditionGroup) Identity() int     { return 0 }
-func (g IntAdditionGroup) Inverse(a int) int { return -a }
-func (g IntAdditionGroup) Gen() int          { return lawtest.IntGen(-50, 50)() }
-
-type DoubleHomomorphism struct{}
-
-func (h DoubleHomomorphism) Map(x int) int {
-	return x * 2
-}
-
-func (h DoubleHomomorphism) SourceGroup() lawtest.Group[int] {
-	return IntAdditionGroup{}
-}
-
-func (h DoubleHomomorphism) TargetGroup() lawtest.Group[int] {
-	// Target is also addition (2x is homomorphism from + to +)
-	return IntAdditionGroup{}
-}
-
-func TestDoubleHomomorphism(t *testing.T) {
-	homo := DoubleHomomorphism{}
-	lawtest.TestHomomorphism[int, int](t, homo)
-}
-
-// Test concurrency functions
-type SafeCache struct {
-	value int
-}
-
-func (c SafeCache) Merge(other SafeCache) SafeCache {
-	return SafeCache{value: c.value + other.value}
-}
-
-func TestParallelSafety(t *testing.T) {
-	mergeOp := func(a, b SafeCache) SafeCache {
-		return a.Merge(b)
-	}
-	cacheGen := func() SafeCache {
-		return SafeCache{value: rand.Intn(100)}
-	}
-
-	t.Run("ParallelSafe", func(t *testing.T) {
-		isSafe := lawtest.ParallelSafe(t, mergeOp, cacheGen, 10)
-		if !isSafe {
-			t.Error("Expected cache merge to be parallel-safe")
-		}
-	})
-
-	t.Run("ParallelAssociativity", func(t *testing.T) {
-		lawtest.TestParallelAssociativity(t, mergeOp, cacheGen, 10)
-		lawtest.ImmutableOp(t, mergeOp, cacheGen)
-	})
-}
-
-// Test custom configuration
-func TestWithCustomConfig(t *testing.T) {
-	addOp := func(a, b int) int { return a + b }
-	intGen := lawtest.IntGen(-1000, 1000)
-
-	cfg := lawtest.DefaultConfig()
-	cfg.TestCases = 200
-
-	t.Run("AssociativeWithConfig", func(t *testing.T) {
-		lawtest.AssociativeWithConfig(t, addOp, intGen, cfg)
-	})
-
-	t.Run("CommutativeWithConfig", func(t *testing.T) {
-		lawtest.CommutativeWithConfig(t, addOp, intGen, cfg)
-	})
-
-	t.Run("IdentityWithConfig", func(t *testing.T) {
-		lawtest.IdentityWithConfig(t, addOp, 0, intGen, cfg)
-	})
-}
-
-// Test generator edge cases
-func TestGeneratorEdgeCases(t *testing.T) {
-	t.Run("IntGen_SameMinMax", func(t *testing.T) {
-		constGen := lawtest.IntGen(5, 5)
-		for i := 0; i < 10; i++ {
-			if val := constGen(); val != 5 {
-				t.Errorf("Expected 5, got %d", val)
-			}
-		}
-	})
-
-	t.Run("IntGen_Panic", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for min > max")
-			}
-		}()
-		_ = lawtest.IntGen(10, 5)
-	})
-
-	t.Run("Float64Gen_Panic", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Expected panic for min > max")
-			}
-		}()
-		_ = lawtest.Float64Gen(10.0, 5.0)
-	})
-}
-
-// TestCustomEqualityFunctions tests the *Custom functions with non-comparable types
-func TestCustomEqualityFunctions(t *testing.T) {
-	// Type with slice (not comparable)
-	type SliceState struct {
-		items []int
-	}
-
-	merge := func(a, b SliceState) SliceState {
-		result := make([]int, 0, len(a.items)+len(b.items))
-		result = append(result, a.items...)
-		result = append(result, b.items...)
-		return SliceState{items: result}
-	}
-
-	gen := func() SliceState {
-		return SliceState{items: []int{rand.Intn(10), rand.Intn(10)}}
-	}
-
-	eq := func(a, b SliceState) bool {
-		if len(a.items) != len(b.items) {
-			return false
-		}
-		for i := range a.items {
-			if a.items[i] != b.items[i] {
-				return false
-			}
-		}
-		return true
-	}
-
-	t.Run("AssociativeCustom", func(t *testing.T) {
-		lawtest.AssociativeCustom(t, merge, gen, eq)
-	})
-
-	t.Run("ImmutableOpCustom", func(t *testing.T) {
-		lawtest.ImmutableOpCustom(t, merge, gen, eq)
-	})
-
-	t.Run("ParallelSafeCustom", func(t *testing.T) {
-		lawtest.ParallelSafeCustom(t, merge, gen, eq, 10)
-	})
-}
-
-// Testing tail recursion optimization equivalence
-func TestTailRecursionEquivalence(t *testing.T) {
-	// Original recursive factorial
-	var factorial func(int) int
-	factorial = func(n int) int {
-		if n <= 1 {
-			return 1
-		}
-		return n * factorial(n-1)
-	}
-
-	// Tail recursive factorial with accumulator
-	var factorialTail func(int, int) int
-	factorialTail = func(n, acc int) int {
-		if n <= 1 {
-			return acc
-		}
-		return factorialTail(n-1, n*acc)
-	}
-
-	// Prove they're equivalent
-	gen := func() int { return rand.Intn(15) + 1 } // Keep small to avoid overflow
-
-	t.Run("Factorial_Equivalence", func(t *testing.T) {
-		lawtest.Equivalent(t,
-			func(n int) int { return factorial(n) },
-			func(n int) int { return factorialTail(n, 1) },
-			gen,
-		)
-	})
-}
-
-// Testing recursive vs iterative list operations
-func TestListReverseEquivalence(t *testing.T) {
-	// Recursive reverse
-	var reverseRecursive func([]int) []int
-	reverseRecursive = func(list []int) []int {
-		if len(list) == 0 {
-			return []int{}
-		}
-		return append(reverseRecursive(list[1:]), list[0])
-	}
-
-	// Iterative reverse
-	reverseIterative := func(list []int) []int {
-		result := make([]int, len(list))
-		for i := range list {
-			result[len(list)-1-i] = list[i]
-		}
-		return result
-	}
-
-	// Generator for random lists
-	gen := func() []int {
-		n := rand.Intn(10) + 1
-		list := make([]int, n)
-		for i := range list {
-			list[i] = rand.Intn(100)
-		}
-		return list
-	}
-
-	// Custom equality for slices
-	eq := func(a, b []int) bool {
-		if len(a) != len(b) {
-			return false
-		}
-		for i := range a {
-			if a[i] != b[i] {
-				return false
-			}
-		}
-		return true
-	}
-
-	t.Run("Reverse_Equivalence", func(t *testing.T) {
-		lawtest.EquivalentCustom(t, reverseRecursive, reverseIterative, gen, eq)
-	})
-}
-
-// Testing fibonacci implementations
-func TestFibonacciEquivalence(t *testing.T) {
-	// Naive recursive fibonacci (slow)
-	var fibRecursive func(int) int
-	fibRecursive = func(n int) int {
-		if n <= 1 {
-			return n
-		}
-		return fibRecursive(n-1) + fibRecursive(n-2)
-	}
-
-	// Iterative fibonacci (fast)
-	fibIterative := func(n int) int {
-		if n <= 1 {
-			return n
-		}
-		a, b := 0, 1
-		for i := 2; i <= n; i++ {
-			a, b = b, a+b
-		}
-		return b
-	}
-
-	// Keep n small for recursive version
-	gen := func() int { return rand.Intn(20) }
-
-	t.Run("Fibonacci_Equivalence", func(t *testing.T) {
-		lawtest.Equivalent(t, fibRecursive, fibIterative, gen)
-	})
+	Equivalent(t, abs1, abs2, gen, eq)
 }

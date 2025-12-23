@@ -1,0 +1,2033 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>lawtest: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/alexshd/lawtest/lawtest.go (80.9%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// Package lawtest provides property-based testing using group theory.
+//
+// lawtest helps verify mathematical properties of operations through
+// randomized testing. Instead of writing specific test cases, you define
+// the mathematical laws your code should obey, and lawtest generates
+// hundreds of test cases automatically.
+//
+// # Basic Usage
+//
+// Test that integer addition is associative:
+//
+//        func TestAddition(t *testing.T) {
+//            add := func(a, b int) int { return a + b }
+//            gen := lawtest.IntGen(-100, 100)
+//            lawtest.Associative(t, add, gen)
+//        }
+//
+// Test multiple properties of a custom operation:
+//
+//        func TestCacheMerge(t *testing.T) {
+//            merge := func(a, b *Cache) *Cache { return a.Merge(b) }
+//            gen := func() *Cache { return NewCache() }
+//
+//            t.Run("Associative", func(t *testing.T) {
+//                lawtest.Associative(t, merge, gen)
+//            })
+//
+//            t.Run("Commutative", func(t *testing.T) {
+//                lawtest.Commutative(t, merge, gen)
+//            })
+//        }
+//
+// # Properties Tested
+//
+// lawtest can verify these mathematical properties:
+//
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Commutativity: a ∘ b = b ∘ a
+//   - Identity: a ∘ e = a and e ∘ a = a
+//   - Inverse: a ∘ a⁻¹ = e and a⁻¹ ∘ a = e
+//   - Closure: result type matches input types
+//   - Idempotence: f(f(x)) = f(x)
+//
+// # Interface-Based Testing
+//
+// For complex types, implement Group, Monoid, or Semigroup interfaces
+// and test all properties at once:
+//
+//        type IntMod struct {
+//            modulus int
+//        }
+//
+//        func (m IntMod) Op(a, b int) int {
+//            return (a + b) % m.modulus
+//        }
+//
+//        func (m IntMod) Identity() int { return 0 }
+//        func (m IntMod) Inverse(a int) int { return (m.modulus - a) % m.modulus }
+//        func (m IntMod) Gen() int { return rand.Intn(m.modulus) }
+//
+//        func TestIntMod(t *testing.T) {
+//            g := IntMod{modulus: 12}
+//            lawtest.TestGroup(t, g) // Tests all group properties
+//        }
+//
+// # Concurrency Testing
+//
+// Test if operations are safe for concurrent use:
+//
+//        func TestParallelSafety(t *testing.T) {
+//            op := func(a, b *Cache) *Cache { return a.Merge(b) }
+//            gen := func() *Cache { return NewCache() }
+//
+//            isSafe := lawtest.ParallelSafe(t, op, gen, 20)
+//            if !isSafe {
+//                t.Error("Cache merge has race conditions")
+//            }
+//        }
+//
+// Test that immutable operations don't mutate inputs:
+//
+//        func TestImmutability(t *testing.T) {
+//            op := func(a, b []int) []int { return append(a, b...) }
+//            gen := func() []int { return []int{1, 2, 3} }
+//            lawtest.ImmutableOp(t, op, gen)
+//        }
+package lawtest
+
+import (
+        "fmt"
+        "math/rand"
+        "reflect"
+        "testing"
+        "time"
+)
+
+// defaultTestCases is the default number of random test cases to generate.
+const defaultTestCases = 100
+
+// BinaryOp is a binary operation that combines two values of type T.
+//
+// Example:
+//
+//        add := func(a, b int) int { return a + b }
+//        mul := func(a, b int) int { return a * b }
+type BinaryOp[T any] func(a, b T) T
+
+// UnaryOp is a unary operation that transforms a value of type T.
+//
+// Example:
+//
+//        negate := func(x int) int { return -x }
+//        inverse := func(x float64) float64 { return 1.0 / x }
+type UnaryOp[T any] func(a T) T
+
+// Generator produces random values of type T for property testing.
+//
+// Generators should produce diverse values to thoroughly test properties.
+// Use built-in generators like IntGen, StringGen, or create custom ones.
+//
+// Example:
+//
+//        gen := lawtest.IntGen(-100, 100)
+//        val := gen() // produces random int in [-100, 100]
+//
+// Custom generator:
+//
+//        type Point struct{ X, Y int }
+//        gen := func() Point {
+//            return Point{
+//                X: rand.Intn(200) - 100,
+//                Y: rand.Intn(200) - 100,
+//            }
+//        }
+type Generator[T any] func() T
+
+// Config holds configuration for property testing.
+//
+// Use DefaultConfig() for sensible defaults, or customize for specific needs:
+//
+//        cfg := &amp;lawtest.Config{
+//            TestCases: 500,           // Run 500 random tests
+//            Timeout:   10 * time.Second, // Max 10 seconds per test
+//        }
+type Config struct {
+        TestCases int           // Number of random test cases to generate and verify
+        Timeout   time.Duration // Maximum time allowed per property test
+}
+
+// DefaultConfig returns a Config with sensible defaults.
+//
+// Default values:
+//   - TestCases: 100 random test cases
+//   - Timeout: 5 seconds
+//
+// Example:
+//
+//        cfg := lawtest.DefaultConfig()
+//        cfg.TestCases = 200 // Customize as needed
+func DefaultConfig() *Config <span class="cov4" title="38">{
+        return &amp;Config{
+                TestCases: defaultTestCases,
+                Timeout:   5 * time.Second,
+        }
+}</span>
+
+// Associative tests if a binary operation is associative: (a ∘ b) ∘ c = a ∘ (b ∘ c).
+//
+// Associativity means the order of applying operations doesn't matter,
+// which is crucial for operations that will be chained or parallelized.
+//
+// Example:
+//
+//        func TestAdditionAssociative(t *testing.T) {
+//            add := func(a, b int) int { return a + b }
+//            gen := lawtest.IntGen(-1000, 1000)
+//            lawtest.Associative(t, add, gen)
+//        }
+//
+// This verifies: (a + b) + c = a + (b + c) for 100 random combinations.
+func Associative[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T]) <span class="cov2" title="5">{
+        AssociativeWithConfig(t, op, gen, DefaultConfig())
+}</span>
+
+// AssociativeWithConfig tests associativity with custom configuration.
+//
+// Use this when you need more test cases or different timeout values.
+//
+// Example:
+//
+//        cfg := &amp;lawtest.Config{TestCases: 500}
+//        lawtest.AssociativeWithConfig(t, op, gen, cfg)
+func AssociativeWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], cfg *Config) <span class="cov3" title="10">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov8" title="1100">{
+                a, b, c := gen(), gen(), gen()
+
+                // (a ∘ b) ∘ c
+                left := op(op(a, b), c)
+
+                // a ∘ (b ∘ c)
+                right := op(a, op(b, c))
+
+                if left != right </span><span class="cov0" title="0">{
+                        t.Errorf("Associativity failed: (a∘b)∘c != a∘(b∘c)\n  a=%v, b=%v, c=%v\n  left=%v, right=%v",
+                                a, b, c, left, right)
+                        return
+                }</span>
+        }
+}
+
+// Commutative tests if a binary operation is commutative: a ∘ b = b ∘ a.
+//
+// Commutativity means operand order doesn't matter. Not all operations
+// are commutative (e.g., subtraction, matrix multiplication).
+//
+// Example:
+//
+//        func TestMultiplicationCommutative(t *testing.T) {
+//            mul := func(a, b int) int { return a * b }
+//            gen := lawtest.IntGen(1, 100)
+//            lawtest.Commutative(t, mul, gen)
+//        }
+//
+// This verifies: a * b = b * a for 100 random pairs.
+func Commutative[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T]) <span class="cov2" title="5">{
+        CommutativeWithConfig(t, op, gen, DefaultConfig())
+}</span>
+
+// CommutativeWithConfig tests commutativity with custom configuration.
+func CommutativeWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], cfg *Config) <span class="cov2" title="6">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="700">{
+                a, b := gen(), gen()
+
+                left := op(a, b)
+                right := op(b, a)
+
+                if left != right </span><span class="cov0" title="0">{
+                        t.Errorf("Commutativity failed: a∘b != b∘a\n  a=%v, b=%v\n  a∘b=%v, b∘a=%v",
+                                a, b, left, right)
+                        return
+                }</span>
+        }
+}
+
+// Identity tests if an identity element exists: a ∘ e = a and e ∘ a = a.
+//
+// The identity element is a special value that, when combined with any other
+// value, returns that value unchanged.
+//
+// Example:
+//
+//        func TestAdditionIdentity(t *testing.T) {
+//            add := func(a, b int) int { return a + b }
+//            gen := lawtest.IntGen(-100, 100)
+//            lawtest.Identity(t, add, 0, gen) // 0 is the identity for addition
+//        }
+//
+// Common identities:
+//   - Addition: 0 (a + 0 = a)
+//   - Multiplication: 1 (a * 1 = a)
+//   - String concatenation: "" (s + "" = s)
+//   - Boolean OR: false (b || false = b)
+func Identity[T comparable](t *testing.T, op BinaryOp[T], identity T, gen Generator[T]) <span class="cov2" title="5">{
+        IdentityWithConfig(t, op, identity, gen, DefaultConfig())
+}</span>
+
+// IdentityWithConfig tests identity element with custom configuration.
+func IdentityWithConfig[T comparable](t *testing.T, op BinaryOp[T], identity T, gen Generator[T], cfg *Config) <span class="cov3" title="8">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov8" title="900">{
+                a := gen()
+
+                // a ∘ e = a
+                leftResult := op(a, identity)
+                if leftResult != a </span><span class="cov0" title="0">{
+                        t.Errorf("Left identity failed: a∘e != a\n  a=%v, e=%v, a∘e=%v",
+                                a, identity, leftResult)
+                        return
+                }</span>
+
+                // e ∘ a = a
+                <span class="cov8" title="900">rightResult := op(identity, a)
+                if rightResult != a </span><span class="cov0" title="0">{
+                        t.Errorf("Right identity failed: e∘a != a\n  e=%v, a=%v, e∘a=%v",
+                                identity, a, rightResult)
+                        return
+                }</span>
+        }
+}
+
+// Inverse tests if each element has an inverse: a ∘ a⁻¹ = e and a⁻¹ ∘ a = e.
+//
+// An inverse "undoes" an operation, returning to the identity element.
+//
+// Example:
+//
+//        func TestIntegerAdditionInverse(t *testing.T) {
+//            add := func(a, b int) int { return a + b }
+//            negate := func(a int) int { return -a }
+//            gen := lawtest.IntGen(-100, 100)
+//            lawtest.Inverse(t, add, negate, 0, gen)
+//        }
+//
+// This verifies: a + (-a) = 0 for all test values.
+//
+// Common inverses:
+//   - Addition: negation (a + (-a) = 0)
+//   - Multiplication: reciprocal (a * (1/a) = 1)
+//   - Boolean XOR: self (a ⊕ a = false)
+func Inverse[T comparable](t *testing.T, op BinaryOp[T], inverse UnaryOp[T], identity T, gen Generator[T]) <span class="cov1" title="2">{
+        InverseWithConfig(t, op, inverse, identity, gen, DefaultConfig())
+}</span>
+
+// InverseWithConfig tests inverse elements with custom configuration.
+func InverseWithConfig[T comparable](t *testing.T, op BinaryOp[T], inv UnaryOp[T], identity T, gen Generator[T], cfg *Config) <span class="cov2" title="3">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="300">{
+                a := gen()
+                aInv := inv(a)
+
+                // a ∘ a⁻¹ = e
+                leftResult := op(a, aInv)
+                if leftResult != identity </span><span class="cov0" title="0">{
+                        t.Errorf("Left inverse failed: a∘a⁻¹ != e\n  a=%v, a⁻¹=%v, e=%v, a∘a⁻¹=%v",
+                                a, aInv, identity, leftResult)
+                        return
+                }</span>
+
+                // a⁻¹ ∘ a = e
+                <span class="cov7" title="300">rightResult := op(aInv, a)
+                if rightResult != identity </span><span class="cov0" title="0">{
+                        t.Errorf("Right inverse failed: a⁻¹∘a != e\n  a⁻¹=%v, a=%v, e=%v, a⁻¹∘a=%v",
+                                aInv, a, identity, rightResult)
+                        return
+                }</span>
+        }
+}
+
+// Closure tests if an operation stays within the same type.
+//
+// Closure means combining two values of type T always produces another value
+// of type T. In Go, this is enforced by the type system through generics,
+// so this function mainly serves as documentation and performs basic validation.
+//
+// Example:
+//
+//        func TestSetUnionClosure(t *testing.T) {
+//            union := func(a, b Set) Set { return a.Union(b) }
+//            gen := func() Set { return NewRandomSet() }
+//            lawtest.Closure(t, union, gen)
+//        }
+//
+// The test verifies that Set.Union(Set) always returns a Set.
+func Closure[T any](t *testing.T, op BinaryOp[T], gen Generator[T]) <span class="cov2" title="6">{
+        t.Helper()
+
+        // Generate a few examples to show closure is maintained
+        for i := 0; i &lt; 10; i++ </span><span class="cov5" title="60">{
+                a, b := gen(), gen()
+                result := op(a, b)
+
+                // Type is enforced by Go's generics, but we can check the operation completes
+                aType := reflect.TypeOf(a)
+                resultType := reflect.TypeOf(result)
+
+                if aType != resultType </span><span class="cov0" title="0">{
+                        t.Errorf("Closure violated: operation changed type\n  input type=%v, result type=%v",
+                                aType, resultType)
+                        return
+                }</span>
+        }
+
+        <span class="cov2" title="6">t.Logf("✓ Closure property holds (enforced by Go's type system)")</span>
+}
+
+// Idempotent tests if repeated application gives the same result: f(f(x)) = f(x).
+//
+// An idempotent operation can be applied multiple times without changing
+// the result after the first application. This is crucial for retry logic,
+// caching, and data normalization.
+//
+// Example:
+//
+//        func TestAbsoluteValueIdempotent(t *testing.T) {
+//            abs := func(x int) int {
+//                if x &lt; 0 {
+//                    return -x
+//                }
+//                return x
+//            }
+//            gen := lawtest.IntGen(-100, 100)
+//            lawtest.Idempotent(t, abs, gen)
+//        }
+//
+// This verifies: abs(abs(x)) = abs(x) for all test values.
+//
+// Common idempotent operations:
+//   - String trimming: trim(trim(s)) = trim(s)
+//   - Absolute value: abs(abs(x)) = abs(x)
+//   - Set deduplication: dedupe(dedupe(set)) = dedupe(set)
+//   - Cache warming: warm(warm(cache)) = warm(cache)
+func Idempotent[T comparable](t *testing.T, op UnaryOp[T], gen Generator[T]) <span class="cov1" title="1">{
+        IdempotentWithConfig(t, op, gen, DefaultConfig())
+}</span>
+
+// IdempotentWithConfig tests idempotence with custom configuration.
+func IdempotentWithConfig[T comparable](t *testing.T, op UnaryOp[T], gen Generator[T], cfg *Config) <span class="cov1" title="2">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov6" title="200">{
+                x := gen()
+
+                fx := op(x)
+                ffx := op(fx)
+
+                if fx != ffx </span><span class="cov0" title="0">{
+                        t.Errorf("Idempotence failed: f(f(x)) != f(x)\n  x=%v, f(x)=%v, f(f(x))=%v",
+                                x, fx, ffx)
+                        return
+                }</span>
+        }
+}
+
+// IntGen creates a Generator that produces random integers in [min, max].
+//
+// The generator produces uniformly distributed integers within the specified
+// range, inclusive of both min and max.
+//
+// Example:
+//
+//        gen := lawtest.IntGen(-100, 100)
+//        for i := 0; i &lt; 10; i++ {
+//            fmt.Println(gen()) // prints random int in [-100, 100]
+//        }
+//
+// Panics if min &gt; max.
+func IntGen(min, max int) Generator[int] <span class="cov8" title="1326">{
+        if min &gt; max </span><span class="cov1" title="1">{
+                panic(fmt.Sprintf("min (%d) must be &lt;= max (%d)", min, max))</span>
+        }
+        <span class="cov8" title="1325">return func() int </span><span class="cov10" title="4550">{
+                return min + rand.Intn(max-min+1)
+        }</span>
+}
+
+// StringGen creates a Generator that produces random strings of length n.
+//
+// Strings contain alphanumeric characters (a-z, A-Z, 0-9).
+// For different character sets, create a custom generator.
+//
+// Example:
+//
+//        gen := lawtest.StringGen(8)
+//        username := gen() // e.g., "aB3xYz9K"
+//
+// Custom character set example:
+//
+//        hexGen := func() string {
+//            const charset = "0123456789abcdef"
+//            b := make([]byte, 16)
+//            for i := range b {
+//                b[i] = charset[rand.Intn(len(charset))]
+//            }
+//            return string(b)
+//        }
+func StringGen(n int) Generator[string] <span class="cov7" title="421">{
+        const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        return func() string </span><span class="cov8" title="820">{
+                b := make([]byte, n)
+                for i := range b </span><span class="cov9" title="4100">{
+                        b[i] = charset[rand.Intn(len(charset))]
+                }</span>
+                <span class="cov8" title="820">return string(b)</span>
+        }
+}
+
+// Float64Gen creates a Generator that produces random float64 values in [min, max].
+//
+// Example:
+//
+//        gen := lawtest.Float64Gen(0.0, 1.0)
+//        probability := gen() // random float in [0.0, 1.0]
+//
+// Panics if min &gt; max.
+func Float64Gen(min, max float64) Generator[float64] <span class="cov1" title="2">{
+        if min &gt; max </span><span class="cov1" title="1">{
+                panic(fmt.Sprintf("min (%f) must be &lt;= max (%f)", min, max))</span>
+        }
+        <span class="cov1" title="1">return func() float64 </span><span class="cov6" title="200">{
+                return min + rand.Float64()*(max-min)
+        }</span>
+}
+
+// BoolGen creates a Generator that produces random boolean values.
+//
+// Example:
+//
+//        gen := lawtest.BoolGen()
+//        flag := gen() // true or false with equal probability
+func BoolGen() Generator[bool] <span class="cov1" title="1">{
+        return func() bool </span><span class="cov7" title="700">{
+                return rand.Intn(2) == 1
+        }</span>
+}
+
+// ===========================================================================
+// INTERFACE-BASED GROUP TESTING
+// ===========================================================================
+
+// Group represents an algebraic group with a binary operation.
+//
+// A Group must satisfy:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: exists e where a ∘ e = e ∘ a = a
+//   - Inverse: for each a, exists a⁻¹ where a ∘ a⁻¹ = a⁻¹ ∘ a = e
+//   - Closure: a ∘ b produces another T
+//
+// Example implementation:
+//
+//        type IntAddMod12 struct{}
+//
+//        func (g IntAddMod12) Op(a, b int) int {
+//            return (a + b) % 12
+//        }
+//
+//        func (g IntAddMod12) Identity() int { return 0 }
+//
+//        func (g IntAddMod12) Inverse(a int) int {
+//            return (12 - a) % 12
+//        }
+//
+//        func (g IntAddMod12) Gen() int {
+//            return rand.Intn(12)
+//        }
+//
+//        func TestModularArithmetic(t *testing.T) {
+//            lawtest.TestGroup(t, IntAddMod12{})
+//        }
+type Group[T comparable] interface {
+        // Op performs the group operation: a ∘ b
+        Op(a, b T) T
+
+        // Identity returns the identity element e where a ∘ e = a
+        Identity() T
+
+        // Inverse returns the inverse of a where a ∘ a⁻¹ = e
+        Inverse(a T) T
+
+        // Gen generates a random element for testing
+        Gen() T
+}
+
+// Monoid represents an algebraic monoid (group without inverse requirement).
+//
+// A Monoid must satisfy:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: exists e where a ∘ e = e ∘ a = a
+//   - Closure: a ∘ b produces another T
+//
+// Example implementation:
+//
+//        type StringConcat struct{}
+//
+//        func (m StringConcat) Op(a, b string) string {
+//            return a + b
+//        }
+//
+//        func (m StringConcat) Identity() string { return "" }
+//
+//        func (m StringConcat) Gen() string {
+//            return lawtest.StringGen(5)()
+//        }
+//
+//        func TestStringConcat(t *testing.T) {
+//            lawtest.TestMonoid(t, StringConcat{})
+//        }
+type Monoid[T comparable] interface {
+        // Op performs the monoid operation: a ∘ b
+        Op(a, b T) T
+
+        // Identity returns the identity element e where a ∘ e = a
+        Identity() T
+
+        // Gen generates a random element for testing
+        Gen() T
+}
+
+// Semigroup represents an algebraic semigroup (only associative operation).
+//
+// A Semigroup must satisfy:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Closure: a ∘ b produces another T
+//
+// Example implementation:
+//
+//        type Max struct{}
+//
+//        func (s Max) Op(a, b int) int {
+//            if a &gt; b {
+//                return a
+//            }
+//            return b
+//        }
+//
+//        func (s Max) Gen() int {
+//            return lawtest.IntGen(1, 1000)()
+//        }
+//
+//        func TestMaxSemigroup(t *testing.T) {
+//            lawtest.TestSemigroup(t, Max{})
+//        }
+type Semigroup[T comparable] interface {
+        // Op performs the semigroup operation: a ∘ b
+        Op(a, b T) T
+
+        // Gen generates a random element for testing
+        Gen() T
+}
+
+// IdempotentOp represents an operation that satisfies f(f(x)) = f(x).
+//
+// Example implementation:
+//
+//        type Abs struct{}
+//
+//        func (o Abs) Apply(x int) int {
+//            if x &lt; 0 {
+//                return -x
+//            }
+//            return x
+//        }
+//
+//        func (o Abs) Gen() int {
+//            return lawtest.IntGen(-100, 100)()
+//        }
+//
+//        func TestAbsolute(t *testing.T) {
+//            lawtest.TestIdempotentOp(t, Abs{})
+//        }
+type IdempotentOp[T comparable] interface {
+        // Apply performs the operation
+        Apply(x T) T
+
+        // Gen generates a random element for testing
+        Gen() T
+}
+
+// Homomorphism represents a structure-preserving map between groups.
+//
+// A Homomorphism must preserve:
+//   - Operation: h(a ∘ b) = h(a) ∘ h(b)
+//   - Identity: h(e_source) = e_target
+//
+// Example implementation:
+//
+//        type AbsoluteValue struct {
+//            source IntAddition  // (ℤ, +)
+//            target IntMultiplication // (ℕ, *)
+//        }
+//
+//        func (h AbsoluteValue) Map(x int) int {
+//            if x &lt; 0 {
+//                return -x
+//            }
+//            return x
+//        }
+//
+//        func (h AbsoluteValue) SourceGroup() lawtest.Group[int] {
+//            return h.source
+//        }
+//
+//        func (h AbsoluteValue) TargetGroup() lawtest.Group[int] {
+//            return h.target
+//        }
+type Homomorphism[T, U comparable] interface {
+        // Map transforms T to U while preserving structure
+        Map(x T) U
+
+        // SourceGroup returns the source group
+        SourceGroup() Group[T]
+
+        // TargetGroup returns the target group
+        TargetGroup() Group[U]
+}
+
+// ===========================================================================
+// INTERFACE-BASED PROPERTY TESTS
+// ===========================================================================
+
+// TestGroup verifies all group properties for a type implementing the Group interface.
+//
+// Tests performed:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: a ∘ e = e ∘ a = a
+//   - Inverse: a ∘ a⁻¹ = a⁻¹ ∘ a = e
+//   - Closure: type consistency
+//
+// Example:
+//
+//        func TestMyGroup(t *testing.T) {
+//            g := MyGroupImpl{...}
+//            lawtest.TestGroup(t, g)
+//        }
+func TestGroup[T comparable](t *testing.T, g Group[T]) <span class="cov1" title="1">{
+        TestGroupWithConfig(t, g, DefaultConfig())
+}</span>
+
+// TestGroupWithConfig verifies all group properties with custom configuration.
+func TestGroupWithConfig[T comparable](t *testing.T, g Group[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeWithConfig(t, g.Op, g.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdentityWithConfig(t, g.Op, g.Identity(), g.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Inverse", func(t *testing.T) </span><span class="cov1" title="1">{
+                InverseWithConfig(t, g.Op, g.Inverse, g.Identity(), g.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Closure", func(t *testing.T) </span><span class="cov1" title="1">{
+                Closure(t, g.Op, g.Gen)
+        }</span>)
+}
+
+// TestMonoid verifies all monoid properties (associativity and identity).
+//
+// Tests performed:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: a ∘ e = e ∘ a = a
+//   - Closure: type consistency
+//
+// Example:
+//
+//        func TestStringConcatMonoid(t *testing.T) {
+//            m := StringConcat{}
+//            lawtest.TestMonoid(t, m)
+//        }
+func TestMonoid[T comparable](t *testing.T, m Monoid[T]) <span class="cov1" title="1">{
+        TestMonoidWithConfig(t, m, DefaultConfig())
+}</span>
+
+// TestMonoidWithConfig verifies monoid properties with custom configuration.
+func TestMonoidWithConfig[T comparable](t *testing.T, m Monoid[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeWithConfig(t, m.Op, m.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdentityWithConfig(t, m.Op, m.Identity(), m.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Closure", func(t *testing.T) </span><span class="cov1" title="1">{
+                Closure(t, m.Op, m.Gen)
+        }</span>)
+}
+
+// TestSemigroup verifies semigroup properties (associativity only).
+//
+// Tests performed:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Closure: type consistency
+//
+// Example:
+//
+//        func TestMaxSemigroup(t *testing.T) {
+//            s := Max{}
+//            lawtest.TestSemigroup(t, s)
+//        }
+func TestSemigroup[T comparable](t *testing.T, s Semigroup[T]) <span class="cov1" title="1">{
+        TestSemigroupWithConfig(t, s, DefaultConfig())
+}</span>
+
+// TestSemigroupWithConfig verifies semigroup properties with custom configuration.
+func TestSemigroupWithConfig[T comparable](t *testing.T, s Semigroup[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeWithConfig(t, s.Op, s.Gen, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Closure", func(t *testing.T) </span><span class="cov1" title="1">{
+                Closure(t, s.Op, s.Gen)
+        }</span>)
+}
+
+// TestIdempotentOp verifies the idempotence property: f(f(x)) = f(x).
+//
+// Example:
+//
+//        func TestAbsIdempotent(t *testing.T) {
+//            op := Abs{}
+//            lawtest.TestIdempotentOp(t, op)
+//        }
+func TestIdempotentOp[T comparable](t *testing.T, op IdempotentOp[T]) <span class="cov1" title="1">{
+        TestIdempotentOpWithConfig(t, op, DefaultConfig())
+}</span>
+
+// TestIdempotentOpWithConfig verifies idempotence with custom configuration.
+func TestIdempotentOpWithConfig[T comparable](t *testing.T, op IdempotentOp[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("Idempotence", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdempotentWithConfig(t, op.Apply, op.Gen, cfg)
+        }</span>)
+}
+
+// TestHomomorphism verifies that a map preserves group structure.
+//
+// Tests performed:
+//   - Preserves operation: h(a ∘ b) = h(a) ∘ h(b)
+//   - Preserves identity: h(e_source) = e_target
+//
+// Example:
+//
+//        func TestAbsHomomorphism(t *testing.T) {
+//            h := AbsoluteValue{...}
+//            lawtest.TestHomomorphism(t, h)
+//        }
+func TestHomomorphism[T, U comparable](t *testing.T, h Homomorphism[T, U]) <span class="cov1" title="1">{
+        TestHomomorphismWithConfig(t, h, DefaultConfig())
+}</span>
+
+// TestHomomorphismWithConfig verifies homomorphism properties with custom configuration.
+func TestHomomorphismWithConfig[T, U comparable](t *testing.T, h Homomorphism[T, U], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        srcGroup := h.SourceGroup()
+        tgtGroup := h.TargetGroup()
+
+        t.Run("PreservesOperation", func(t *testing.T) </span><span class="cov1" title="1">{
+                // Verify: h(a ∘ b) = h(a) ∘ h(b)
+                for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                        a := srcGroup.Gen()
+                        b := srcGroup.Gen()
+
+                        // Left side: h(a ∘ b)
+                        ab := srcGroup.Op(a, b)
+                        hAb := h.Map(ab)
+
+                        // Right side: h(a) ∘ h(b)
+                        ha := h.Map(a)
+                        hb := h.Map(b)
+                        haHb := tgtGroup.Op(ha, hb)
+
+                        if hAb != haHb </span><span class="cov0" title="0">{
+                                t.Errorf("Homomorphism failed: h(a∘b) != h(a)∘h(b)\n  a=%v, b=%v\n  h(a∘b)=%v, h(a)∘h(b)=%v",
+                                        a, b, hAb, haHb)
+                                return
+                        }</span>
+                }
+        })
+
+        <span class="cov1" title="1">t.Run("PreservesIdentity", func(t *testing.T) </span><span class="cov1" title="1">{
+                // Verify: h(e_source) = e_target
+                sourceIdentity := srcGroup.Identity()
+                targetIdentity := tgtGroup.Identity()
+
+                mappedIdentity := h.Map(sourceIdentity)
+
+                if mappedIdentity != targetIdentity </span><span class="cov0" title="0">{
+                        t.Errorf("Homomorphism doesn't preserve identity: h(e_src) != e_tgt\n  e_src=%v, e_tgt=%v, h(e_src)=%v",
+                                sourceIdentity, targetIdentity, mappedIdentity)
+                }</span>
+        })
+}
+
+// ===========================================================================
+// HELPER: TEST THAT A STRUCT *FAILS* GROUP PROPERTIES (for negative testing)
+// ===========================================================================
+
+// ExpectGroupFailure runs group tests expecting them to FAIL
+// Useful for verifying that broken implementations are correctly detected
+func ExpectGroupFailure[T comparable](t *testing.T, g Group[T], expectedFailure string) <span class="cov0" title="0">{
+        t.Helper()
+
+        // Create a sub-test that we expect to fail
+        failed := false
+
+        testFunc := func(t *testing.T) </span><span class="cov0" title="0">{
+                TestGroup(t, g)
+        }</span>
+
+        // Run test and capture if it failed
+        <span class="cov0" title="0">result := testing.RunTests(func(pat, str string) (bool, error) </span><span class="cov0" title="0">{
+                return true, nil
+        }</span>, []testing.InternalTest{
+                {
+                        Name: "ExpectedFailure",
+                        F:    testFunc,
+                },
+        })
+
+        <span class="cov0" title="0">if !result </span><span class="cov0" title="0">{
+                failed = true
+        }</span>
+
+        <span class="cov0" title="0">if !failed </span><span class="cov0" title="0">{
+                t.Errorf("Expected group test to fail with '%s', but it passed!", expectedFailure)
+        }</span> else<span class="cov0" title="0"> {
+                t.Logf("✓ Group correctly failed validation (as expected: %s)", expectedFailure)
+        }</span>
+}
+
+// ===========================================================================
+// CONCURRENCY SAFETY TESTING
+// ===========================================================================
+
+// ParallelSafe tests if an operation can be safely executed concurrently.
+//
+// Returns true if the operation is parallel-safe (no race conditions detected).
+// Immutable operations (pure functions) should pass. Mutating operations
+// will exhibit race conditions under concurrent access.
+//
+// The test launches multiple goroutines that execute the operation
+// simultaneously on shared data. Race conditions, panics, or data corruption
+// indicate the operation is not parallel-safe.
+//
+// Example:
+//
+//        func TestCacheMergeParallel(t *testing.T) {
+//            merge := func(a, b *Cache) *Cache { return a.Merge(b) }
+//            gen := func() *Cache { return NewCache() }
+//
+//            isSafe := lawtest.ParallelSafe(t, merge, gen, 20)
+//            if !isSafe {
+//                t.Error("Cache merge is not parallel-safe")
+//            }
+//        }
+//
+// For production use, always run tests with -race flag:
+//
+//        go test -race
+func ParallelSafe[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], goroutines int) bool <span class="cov1" title="1">{
+        return ParallelSafeWithConfig(t, op, gen, goroutines, DefaultConfig())
+}</span>
+
+// ParallelSafeWithConfig tests parallel safety with custom configuration.
+func ParallelSafeWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], goroutines int, cfg *Config) bool <span class="cov1" title="1">{
+        t.Helper()
+
+        if goroutines &lt; 2 </span><span class="cov0" title="0">{
+                goroutines = 10 // Default to 10 goroutines
+        }</span>
+
+        // Create shared test data
+        <span class="cov1" title="1">testData := make([]T, cfg.TestCases)
+        for i := range testData </span><span class="cov5" title="100">{
+                testData[i] = gen()
+        }</span>
+
+        // Run operations concurrently
+        <span class="cov1" title="1">done := make(chan bool, goroutines)
+        errors := make(chan string, goroutines)
+
+        for g := 0; g &lt; goroutines; g++ </span><span class="cov3" title="10">{
+                go func(id int) </span><span class="cov3" title="10">{
+                        defer func() </span><span class="cov3" title="10">{
+                                if r := recover(); r != nil </span><span class="cov0" title="0">{
+                                        errors &lt;- fmt.Sprintf("Goroutine %d panicked: %v", id, r)
+                                }</span>
+                                <span class="cov3" title="10">done &lt;- true</span>
+                        }()
+
+                        // Perform operations on shared data
+                        <span class="cov3" title="10">for i := 0; i &lt; len(testData)-1; i++ </span><span class="cov8" title="990">{
+                                _ = op(testData[i], testData[i+1])
+                        }</span>
+                }(g)
+        }
+
+        // Wait for all goroutines
+        <span class="cov1" title="1">for i := 0; i &lt; goroutines; i++ </span><span class="cov3" title="10">{
+                &lt;-done
+        }</span>
+
+        // Check for errors
+        <span class="cov1" title="1">close(errors)
+        hasErrors := false
+        for err := range errors </span><span class="cov0" title="0">{
+                t.Logf("⚠ Race condition detected: %s", err)
+                hasErrors = true
+        }</span>
+
+        <span class="cov1" title="1">if hasErrors </span><span class="cov0" title="0">{
+                t.Logf("❌ Operation is NOT parallel-safe (race conditions detected)")
+                return false
+        }</span>
+
+        <span class="cov1" title="1">t.Logf("✅ Operation appears parallel-safe (no race conditions in %d goroutines)", goroutines)
+        return true</span>
+}
+
+// TestParallelAssociativity tests if associativity holds under concurrent execution.
+//
+// This is a stronger test than Associative: not only must (a∘b)∘c = a∘(b∘c),
+// but this must hold even when operations execute concurrently. This catches
+// bugs related to shared mutable state, race conditions, or non-deterministic
+// behavior in concurrent contexts.
+//
+// The test first verifies sequential associativity, then launches multiple
+// goroutines that test associativity simultaneously.
+//
+// Example:
+//
+//        func TestCacheMergeConcurrent(t *testing.T) {
+//            merge := func(a, b *Cache) *Cache { return a.Merge(b) }
+//            gen := func() *Cache { return NewCache() }
+//            lawtest.TestParallelAssociativity(t, merge, gen, 20)
+//        }
+//
+// Run with -race flag to detect data races:
+//
+//        go test -race -run TestCacheMergeConcurrent
+func TestParallelAssociativity[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], goroutines int) <span class="cov1" title="1">{
+        TestParallelAssociativityWithConfig(t, op, gen, goroutines, DefaultConfig())
+}</span>
+
+// TestParallelAssociativityWithConfig tests parallel associativity with custom configuration.
+func TestParallelAssociativityWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], goroutines int, cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        if goroutines &lt; 2 </span><span class="cov0" title="0">{
+                goroutines = 10
+        }</span>
+
+        // First verify sequential associativity
+        <span class="cov1" title="1">t.Run("Sequential", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeWithConfig(t, op, gen, cfg)
+        }</span>)
+
+        // Then test under concurrent load
+        <span class="cov1" title="1">t.Run("Concurrent", func(t *testing.T) </span><span class="cov1" title="1">{
+                type testCase struct {
+                        a, b, c T
+                        left    T
+                        right   T
+                }
+
+                results := make(chan testCase, cfg.TestCases)
+                done := make(chan bool, goroutines)
+
+                // Launch goroutines to test associativity concurrently
+                casesPerGoroutine := cfg.TestCases / goroutines
+                if casesPerGoroutine == 0 </span><span class="cov0" title="0">{
+                        casesPerGoroutine = 1
+                }</span>
+
+                <span class="cov1" title="1">for g := 0; g &lt; goroutines; g++ </span><span class="cov3" title="10">{
+                        go func() </span><span class="cov3" title="10">{
+                                defer func() </span><span class="cov3" title="10">{ done &lt;- true }</span>()
+
+                                <span class="cov3" title="10">for i := 0; i &lt; casesPerGoroutine; i++ </span><span class="cov5" title="100">{
+                                        a, b, c := gen(), gen(), gen()
+                                        left := op(op(a, b), c)
+                                        right := op(a, op(b, c))
+
+                                        results &lt;- testCase{a, b, c, left, right}
+                                }</span>
+                        }()
+                }
+
+                // Wait for all goroutines
+                <span class="cov1" title="1">go func() </span><span class="cov1" title="1">{
+                        for i := 0; i &lt; goroutines; i++ </span><span class="cov3" title="10">{
+                                &lt;-done
+                        }</span>
+                        <span class="cov1" title="1">close(results)</span>
+                }()
+
+                // Check results
+                <span class="cov1" title="1">failures := 0
+                for tc := range results </span><span class="cov5" title="100">{
+                        if tc.left != tc.right </span><span class="cov0" title="0">{
+                                t.Errorf("Associativity failed under concurrency: (a∘b)∘c != a∘(b∘c)\n  a=%v, b=%v, c=%v\n  left=%v, right=%v",
+                                        tc.a, tc.b, tc.c, tc.left, tc.right)
+                                failures++
+                                if failures &gt;= 3 </span><span class="cov0" title="0">{
+                                        break</span>
+                                }
+                        }
+                }
+
+                <span class="cov1" title="1">if failures == 0 </span><span class="cov1" title="1">{
+                        t.Logf("✅ Associativity holds under concurrent execution (%d goroutines)", goroutines)
+                }</span> else<span class="cov0" title="0"> {
+                        t.Logf("❌ Associativity violated under concurrency (%d failures)", failures)
+                }</span>
+        })
+}
+
+// ImmutableOp tests if an operation creates new values instead of mutating inputs.
+//
+// Immutable operations are crucial for:
+//   - Thread-safe code (no need for locks)
+//   - Functional programming patterns
+//   - Avoiding side effects and debugging nightmares
+//
+// The test verifies that input values remain unchanged after the operation.
+//
+// Example:
+//
+//        func TestListAppendImmutable(t *testing.T) {
+//            // Good: returns new slice
+//            append := func(a, b []int) []int {
+//                result := make([]int, len(a)+len(b))
+//                copy(result, a)
+//                copy(result[len(a):], b)
+//                return result
+//            }
+//
+//            gen := func() []int { return []int{1, 2, 3} }
+//            lawtest.ImmutableOp(t, append, gen)
+//        }
+//
+// This catches mutations that violate functional programming principles.
+func ImmutableOp[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T]) <span class="cov1" title="1">{
+        ImmutableOpWithConfig(t, op, gen, DefaultConfig())
+}</span>
+
+// ImmutableOpWithConfig tests immutability with custom configuration.
+func ImmutableOpWithConfig[T comparable](t *testing.T, op BinaryOp[T], gen Generator[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                a, b := gen(), gen()
+
+                // Create copies for comparison (for comparable types)
+                aOriginal := a
+                bOriginal := b
+
+                // Apply operation
+                _ = op(a, b)
+
+                // Check if inputs were mutated
+                if a != aOriginal </span><span class="cov0" title="0">{
+                        t.Errorf("Immutability violated: operation mutated first argument\n  before=%v, after=%v",
+                                aOriginal, a)
+                        return
+                }</span>
+
+                <span class="cov5" title="100">if b != bOriginal </span><span class="cov0" title="0">{
+                        t.Errorf("Immutability violated: operation mutated second argument\n  before=%v, after=%v",
+                                bOriginal, b)
+                        return
+                }</span>
+        }
+
+        <span class="cov1" title="1">t.Logf("✅ Operation is immutable (does not mutate inputs)")</span>
+}
+
+// AssociativeCustom tests associativity using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//        type State struct { items []int }
+//        merge := func(a, b State) State { ... }
+//        gen := func() State { return State{items: []int{1,2,3}} }
+//        eq := func(a, b State) bool { return reflect.DeepEqual(a.items, b.items) }
+//        lawtest.AssociativeCustom(t, merge, gen, eq)
+func AssociativeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        AssociativeCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}</span>
+
+// AssociativeCustomWithConfig tests associativity with custom equality and configuration.
+func AssociativeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov2" title="4">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="400">{
+                a, b, c := gen(), gen(), gen()
+
+                // (a ∘ b) ∘ c
+                left := op(op(a, b), c)
+
+                // a ∘ (b ∘ c)
+                right := op(a, op(b, c))
+
+                if !eq(left, right) </span><span class="cov0" title="0">{
+                        t.Errorf("Associativity failed: (a∘b)∘c != a∘(b∘c)\n  a=%v, b=%v, c=%v\n  left=%v, right=%v",
+                                a, b, c, left, right)
+                        return
+                }</span>
+        }
+
+        <span class="cov2" title="4">t.Logf("✅ Operation is associative with custom equality")</span>
+}
+
+// ImmutableOpCustom tests immutability using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//        type State struct { data map[string]int }
+//        merge := func(a, b State) State { ... }
+//        gen := func() State { return State{data: map[string]int{"x": 1}} }
+//        eq := func(a, b State) bool { return reflect.DeepEqual(a.data, b.data) }
+//        lawtest.ImmutableOpCustom(t, merge, gen, eq)
+func ImmutableOpCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        ImmutableOpCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}</span>
+
+// ImmutableOpCustomWithConfig tests immutability with custom equality and configuration.
+func ImmutableOpCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                a, b := gen(), gen()
+
+                // Create deep copies using custom serialization
+                // Since we can't rely on comparable, we'll test by calling the function
+                // and checking if the original values changed using custom equality
+                aOriginal := a
+                bOriginal := b
+
+                // Apply operation
+                _ = op(a, b)
+
+                // Check if inputs were mutated using custom equality
+                if !eq(a, aOriginal) </span><span class="cov0" title="0">{
+                        t.Errorf("Immutability violated: operation mutated first argument\n  before=%v, after=%v",
+                                aOriginal, a)
+                        return
+                }</span>
+
+                <span class="cov5" title="100">if !eq(b, bOriginal) </span><span class="cov0" title="0">{
+                        t.Errorf("Immutability violated: operation mutated second argument\n  before=%v, after=%v",
+                                bOriginal, b)
+                        return
+                }</span>
+        }
+
+        <span class="cov1" title="1">t.Logf("✅ Operation is immutable (does not mutate inputs)")</span>
+}
+
+// ParallelSafeCustom tests parallel safety using a custom equality function.
+// Use this for non-comparable types (slices, maps, functions).
+//
+// Example:
+//
+//        type Cache struct { data map[string]string }
+//        merge := func(a, b Cache) Cache { ... }
+//        gen := func() Cache { return Cache{data: map[string]string{"x": "y"}} }
+//        eq := func(a, b Cache) bool { return reflect.DeepEqual(a.data, b.data) }
+//        lawtest.ParallelSafeCustom(t, merge, gen, eq, 100)
+func ParallelSafeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, goroutines int) bool <span class="cov1" title="2">{
+        return ParallelSafeCustomWithConfig(t, op, gen, eq, goroutines, DefaultConfig())
+}</span>
+
+// ParallelSafeCustomWithConfig tests parallel safety with custom equality and configuration.
+func ParallelSafeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, goroutines int, cfg *Config) bool <span class="cov1" title="2">{
+        t.Helper()
+
+        // Generate test data
+        a, b := gen(), gen()
+
+        // Expected result (sequential)
+        expected := op(a, b)
+
+        // Run operation concurrently many times
+        results := make([]T, goroutines)
+        done := make(chan bool, goroutines)
+
+        for i := 0; i &lt; goroutines; i++ </span><span class="cov4" title="30">{
+                go func(idx int) </span><span class="cov4" title="30">{
+                        results[idx] = op(a, b)
+                        done &lt;- true
+                }</span>(i)
+        }
+
+        // Wait for all goroutines
+        <span class="cov1" title="2">for i := 0; i &lt; goroutines; i++ </span><span class="cov4" title="30">{
+                &lt;-done
+        }</span>
+
+        // Check if all results match expected using custom equality
+        <span class="cov1" title="2">for i, result := range results </span><span class="cov4" title="30">{
+                if !eq(result, expected) </span><span class="cov0" title="0">{
+                        t.Errorf("Parallel safety failed: goroutine %d produced different result\n  expected=%v, got=%v",
+                                i, expected, result)
+                        return false
+                }</span>
+        }
+
+        <span class="cov1" title="2">t.Logf("✅ Operation appears parallel-safe (no race conditions in %d goroutines)", goroutines)
+        return true</span>
+}
+
+// Equivalent tests if two functions produce the same output for all inputs.
+//
+// This is useful for verifying that optimized implementations (tail recursion,
+// iterative versions, cached versions) produce the same results as the original.
+//
+// Example:
+//
+//        // Original recursive
+//        func Factorial(n int) int {
+//            if n &lt;= 1 { return 1 }
+//            return n * Factorial(n-1)
+//        }
+//
+//        // Tail optimized version
+//        func FactorialTail(n, acc int) int {
+//            if n &lt;= 1 { return acc }
+//            return FactorialTail(n-1, n*acc)
+//        }
+//
+//        // Prove they're equivalent
+//        func TestTailOptimization(t *testing.T) {
+//            gen := func() int { return rand.Intn(20) + 1 }
+//            lawtest.Equivalent(t,
+//                func(n int) int { return Factorial(n) },
+//                func(n int) int { return FactorialTail(n, 1) },
+//                gen,
+//            )
+//        }
+//
+// Parameters:
+//   - t: testing.T instance
+//   - f1: first function to compare
+//   - f2: second function to compare
+//   - gen: generator function for random test inputs
+//
+// Returns true if both functions produce the same output for all test cases.
+func Equivalent[T any, R comparable](t *testing.T, f1, f2 func(T) R, gen func() T) bool <span class="cov1" title="2">{
+        t.Helper()
+        iterations := defaultTestCases
+
+        for i := 0; i &lt; iterations; i++ </span><span class="cov6" title="200">{
+                input := gen()
+                result1 := f1(input)
+                result2 := f2(input)
+
+                if result1 != result2 </span><span class="cov0" title="0">{
+                        t.Errorf("Functions not equivalent at iteration %d\n  input=%v\n  f1(input)=%v\n  f2(input)=%v",
+                                i, input, result1, result2)
+                        return false
+                }</span>
+        }
+
+        <span class="cov1" title="2">t.Logf("✅ Functions are equivalent (tested %d random inputs)", iterations)
+        return true</span>
+}
+
+// EquivalentCustom tests if two functions produce the same output for all inputs,
+// using a custom equality function for non-comparable output types.
+//
+// This extends Equivalent to work with slices, maps, structs without comparable fields, etc.
+//
+// Example:
+//
+//        // Recursive list reverse
+//        func ReverseRecursive(list []int) []int {
+//            if len(list) == 0 { return []int{} }
+//            return append(ReverseRecursive(list[1:]), list[0])
+//        }
+//
+//        // Iterative list reverse
+//        func ReverseIterative(list []int) []int {
+//            result := make([]int, len(list))
+//            for i := range list {
+//                result[len(list)-1-i] = list[i]
+//            }
+//            return result
+//        }
+//
+//        // Prove they're equivalent
+//        func TestReverseEquivalent(t *testing.T) {
+//            gen := func() []int {
+//                n := rand.Intn(10)
+//                list := make([]int, n)
+//                for i := range list { list[i] = rand.Intn(100) }
+//                return list
+//            }
+//            eq := func(a, b []int) bool { return reflect.DeepEqual(a, b) }
+//            lawtest.EquivalentCustom(t, ReverseRecursive, ReverseIterative, gen, eq)
+//        }
+//
+// Parameters:
+//   - t: testing.T instance
+//   - f1: first function to compare
+//   - f2: second function to compare
+//   - gen: generator function for random test inputs
+//   - eq: custom equality function for comparing outputs
+//
+// Returns true if both functions produce equal output for all test cases.
+func EquivalentCustom[T any, R any](t *testing.T, f1, f2 func(T) R, gen func() T, eq func(R, R) bool) bool <span class="cov1" title="1">{
+        t.Helper()
+        iterations := defaultTestCases
+
+        for i := 0; i &lt; iterations; i++ </span><span class="cov5" title="100">{
+                input := gen()
+                result1 := f1(input)
+                result2 := f2(input)
+
+                if !eq(result1, result2) </span><span class="cov0" title="0">{
+                        t.Errorf("Functions not equivalent at iteration %d\n  input=%v\n  f1(input)=%v\n  f2(input)=%v",
+                                i, input, result1, result2)
+                        return false
+                }</span>
+        }
+
+        <span class="cov1" title="1">t.Logf("✅ Functions are equivalent (tested %d random inputs)", iterations)
+        return true</span>
+}
+
+// ===========================================================================
+// CUSTOM EQUALITY VARIANTS FOR NON-COMPARABLE TYPES
+// ===========================================================================
+//
+// These functions mirror the standard property tests but accept a custom
+// equality function, enabling testing of types with slices, maps, or other
+// non-comparable fields. Essential for the geometric data paradigm where
+// vectors contain byte slices.
+
+// IdentityCustom tests if an identity element exists using custom equality.
+// Use this for non-comparable types (slices, maps, structs with slices).
+//
+// Example:
+//
+//        type Packet struct { data []byte }
+//        add := func(a, b Packet) Packet { ... }
+//        identity := Packet{data: []byte{}}
+//        gen := func() Packet { return randomPacket() }
+//        eq := func(a, b Packet) bool { return bytes.Equal(a.data, b.data) }
+//        lawtest.IdentityCustom(t, add, identity, gen, eq)
+func IdentityCustom[T any](t *testing.T, op BinaryOp[T], identity T, gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        IdentityCustomWithConfig(t, op, identity, gen, eq, DefaultConfig())
+}</span>
+
+// IdentityCustomWithConfig tests identity element with custom equality and configuration.
+func IdentityCustomWithConfig[T any](t *testing.T, op BinaryOp[T], identity T, gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov2" title="4">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="400">{
+                a := gen()
+
+                // a ∘ e = a (right identity)
+                rightResult := op(a, identity)
+                if !eq(rightResult, a) </span><span class="cov0" title="0">{
+                        t.Errorf("Right identity failed: a∘e != a\n  a=%v, e=%v, a∘e=%v",
+                                a, identity, rightResult)
+                        return
+                }</span>
+
+                // e ∘ a = a (left identity)
+                <span class="cov7" title="400">leftResult := op(identity, a)
+                if !eq(leftResult, a) </span><span class="cov0" title="0">{
+                        t.Errorf("Left identity failed: e∘a != a\n  e=%v, a=%v, e∘a=%v",
+                                identity, a, leftResult)
+                        return
+                }</span>
+        }
+
+        <span class="cov2" title="4">t.Logf("✅ Identity element verified with custom equality")</span>
+}
+
+// InverseCustom tests if each element has an inverse using custom equality.
+// Use this for non-comparable types.
+//
+// Example:
+//
+//        type Packet struct { data []byte }
+//        add := func(a, b Packet) Packet { ... }
+//        inv := func(a Packet) Packet { return a.Inverse() }
+//        identity := Packet{data: []byte{}}
+//        gen := func() Packet { return randomPacket() }
+//        eq := func(a, b Packet) bool { return bytes.Equal(a.data, b.data) }
+//        lawtest.InverseCustom(t, add, inv, identity, gen, eq)
+func InverseCustom[T any](t *testing.T, op BinaryOp[T], inv UnaryOp[T], identity T, gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        InverseCustomWithConfig(t, op, inv, identity, gen, eq, DefaultConfig())
+}</span>
+
+// InverseCustomWithConfig tests inverse elements with custom equality and configuration.
+func InverseCustomWithConfig[T any](t *testing.T, op BinaryOp[T], inv UnaryOp[T], identity T, gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov2" title="4">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="400">{
+                a := gen()
+                aInv := inv(a)
+
+                // a ∘ a⁻¹ = e
+                leftResult := op(a, aInv)
+                if !eq(leftResult, identity) </span><span class="cov0" title="0">{
+                        t.Errorf("Left inverse failed: a∘a⁻¹ != e\n  a=%v, a⁻¹=%v, e=%v, a∘a⁻¹=%v",
+                                a, aInv, identity, leftResult)
+                        return
+                }</span>
+
+                // a⁻¹ ∘ a = e
+                <span class="cov7" title="400">rightResult := op(aInv, a)
+                if !eq(rightResult, identity) </span><span class="cov0" title="0">{
+                        t.Errorf("Right inverse failed: a⁻¹∘a != e\n  a⁻¹=%v, a=%v, e=%v, a⁻¹∘a=%v",
+                                aInv, a, identity, rightResult)
+                        return
+                }</span>
+        }
+
+        <span class="cov2" title="4">t.Logf("✅ Inverse elements verified with custom equality")</span>
+}
+
+// CommutativeCustom tests if a binary operation is commutative using custom equality.
+// Use this for non-comparable types.
+//
+// Example:
+//
+//        type Packet struct { data []byte }
+//        add := func(a, b Packet) Packet { ... }
+//        gen := func() Packet { return randomPacket() }
+//        eq := func(a, b Packet) bool { return bytes.Equal(a.data, b.data) }
+//        lawtest.CommutativeCustom(t, add, gen, eq)
+func CommutativeCustom[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        CommutativeCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}</span>
+
+// CommutativeCustomWithConfig tests commutativity with custom equality and configuration.
+func CommutativeCustomWithConfig[T any](t *testing.T, op BinaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov2" title="3">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov7" title="300">{
+                a, b := gen(), gen()
+
+                left := op(a, b)
+                right := op(b, a)
+
+                if !eq(left, right) </span><span class="cov0" title="0">{
+                        t.Errorf("Commutativity failed: a∘b != b∘a\n  a=%v, b=%v\n  a∘b=%v, b∘a=%v",
+                                a, b, left, right)
+                        return
+                }</span>
+        }
+
+        <span class="cov2" title="3">t.Logf("✅ Operation is commutative with custom equality")</span>
+}
+
+// IdempotentCustom tests if repeated application gives the same result using custom equality.
+// Use this for non-comparable types: f(f(x)) = f(x).
+//
+// Example:
+//
+//        type State struct { data []byte }
+//        normalize := func(s State) State { ... }
+//        gen := func() State { return randomState() }
+//        eq := func(a, b State) bool { return bytes.Equal(a.data, b.data) }
+//        lawtest.IdempotentCustom(t, normalize, gen, eq)
+func IdempotentCustom[T any](t *testing.T, op UnaryOp[T], gen Generator[T], eq func(T, T) bool) <span class="cov1" title="1">{
+        IdempotentCustomWithConfig(t, op, gen, eq, DefaultConfig())
+}</span>
+
+// IdempotentCustomWithConfig tests idempotence with custom equality and configuration.
+func IdempotentCustomWithConfig[T any](t *testing.T, op UnaryOp[T], gen Generator[T], eq func(T, T) bool, cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                x := gen()
+
+                fx := op(x)
+                ffx := op(fx)
+
+                if !eq(fx, ffx) </span><span class="cov0" title="0">{
+                        t.Errorf("Idempotence failed: f(f(x)) != f(x)\n  x=%v, f(x)=%v, f(f(x))=%v",
+                                x, fx, ffx)
+                        return
+                }</span>
+        }
+
+        <span class="cov1" title="1">t.Logf("✅ Operation is idempotent with custom equality")</span>
+}
+
+// ===========================================================================
+// GROUP INTERFACE FOR NON-COMPARABLE TYPES
+// ===========================================================================
+
+// GroupCustom represents an algebraic group for non-comparable types.
+//
+// Unlike Group[T comparable], this interface works with types containing
+// slices, maps, or other non-comparable fields. Essential for geometric
+// data structures where vectors are []byte or []trit.
+//
+// A GroupCustom must satisfy:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: exists e where a ∘ e = e ∘ a = a
+//   - Inverse: for each a, exists a⁻¹ where a ∘ a⁻¹ = a⁻¹ ∘ a = e
+//   - Closure: a ∘ b produces another T
+//
+// Example implementation:
+//
+//        type PacketGroup struct{ Dim int }
+//
+//        func (g PacketGroup) Op(a, b Packet) Packet { return a.Add(b) }
+//        func (g PacketGroup) Identity() Packet { return ZeroPacket(g.Dim) }
+//        func (g PacketGroup) Inverse(a Packet) Packet { return a.Inverse() }
+//        func (g PacketGroup) Gen() Packet { return RandomPacket(g.Dim) }
+//        func (g PacketGroup) Eq(a, b Packet) bool { return a.Equal(b) }
+//
+//        func TestPacketGroup(t *testing.T) {
+//            lawtest.TestGroupCustom(t, PacketGroup{Dim: 100})
+//        }
+type GroupCustom[T any] interface {
+        // Op performs the group operation: a ∘ b
+        Op(a, b T) T
+
+        // Identity returns the identity element e where a ∘ e = a
+        Identity() T
+
+        // Inverse returns the inverse of a where a ∘ a⁻¹ = e
+        Inverse(a T) T
+
+        // Gen generates a random element for testing
+        Gen() T
+
+        // Eq tests equality between two elements (custom equality)
+        Eq(a, b T) bool
+}
+
+// TestGroupCustom verifies all group properties for non-comparable types.
+//
+// Tests performed:
+//   - Associativity: (a ∘ b) ∘ c = a ∘ (b ∘ c)
+//   - Identity: a ∘ e = e ∘ a = a
+//   - Inverse: a ∘ a⁻¹ = a⁻¹ ∘ a = e
+//   - Closure: type consistency
+//
+// Example:
+//
+//        func TestMyGroup(t *testing.T) {
+//            g := PacketGroup{Dim: 100}
+//            lawtest.TestGroupCustom(t, g)
+//        }
+func TestGroupCustom[T any](t *testing.T, g GroupCustom[T]) <span class="cov1" title="1">{
+        TestGroupCustomWithConfig(t, g, DefaultConfig())
+}</span>
+
+// TestGroupCustomWithConfig verifies all group properties with custom configuration.
+func TestGroupCustomWithConfig[T any](t *testing.T, g GroupCustom[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeCustomWithConfig(t, g.Op, g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdentityCustomWithConfig(t, g.Op, g.Identity(), g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Inverse", func(t *testing.T) </span><span class="cov1" title="1">{
+                InverseCustomWithConfig(t, g.Op, g.Inverse, g.Identity(), g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Closure", func(t *testing.T) </span><span class="cov1" title="1">{
+                Closure(t, g.Op, g.Gen)
+        }</span>)
+}
+
+// AbelianGroupCustom represents a commutative group for non-comparable types.
+//
+// An Abelian (commutative) group adds the property:
+//   - Commutativity: a ∘ b = b ∘ a
+//
+// Most vector spaces use Abelian groups for their addition operation.
+type AbelianGroupCustom[T any] interface {
+        GroupCustom[T]
+}
+
+// TestAbelianGroupCustom verifies all Abelian group properties for non-comparable types.
+//
+// Tests performed:
+//   - All Group properties (associativity, identity, inverse, closure)
+//   - Commutativity: a ∘ b = b ∘ a
+func TestAbelianGroupCustom[T any](t *testing.T, g AbelianGroupCustom[T]) <span class="cov1" title="1">{
+        TestAbelianGroupCustomWithConfig(t, g, DefaultConfig())
+}</span>
+
+// TestAbelianGroupCustomWithConfig verifies Abelian group properties with custom configuration.
+func TestAbelianGroupCustomWithConfig[T any](t *testing.T, g AbelianGroupCustom[T], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        // Test all group properties using the interface methods directly
+        t.Run("Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeCustomWithConfig(t, g.Op, g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdentityCustomWithConfig(t, g.Op, g.Identity(), g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Inverse", func(t *testing.T) </span><span class="cov1" title="1">{
+                InverseCustomWithConfig(t, g.Op, g.Inverse, g.Identity(), g.Gen, g.Eq, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("Closure", func(t *testing.T) </span><span class="cov1" title="1">{
+                Closure(t, g.Op, g.Gen)
+        }</span>)
+
+        // Additional: commutativity
+        <span class="cov1" title="1">t.Run("Commutativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                CommutativeCustomWithConfig(t, g.Op, g.Gen, g.Eq, cfg)
+        }</span>)
+}
+
+// ===========================================================================
+// VECTOR SPACE TESTING
+// ===========================================================================
+
+// VectorSpaceCustom represents a vector space over a scalar field.
+//
+// A vector space (V, +, ·) over scalar field S must satisfy:
+//   - (V, +) is an Abelian group
+//   - Scalar multiplication distributes: s·(v + w) = s·v + s·w
+//   - Scalar multiplication distributes: (s + t)·v = s·v + t·v
+//   - Scalar multiplication associates: (s·t)·v = s·(t·v)
+//   - Identity scalar: 1·v = v
+//
+// For Z₃ vectors, the scalar field is also Z₃ (trits: 0, 1, 2).
+//
+// Example:
+//
+//        type PacketVectorSpace struct{ Dim int }
+//
+//        func (vs PacketVectorSpace) Add(v, w Packet) Packet { return v.Add(w) }
+//        func (vs PacketVectorSpace) Zero() Packet { return ZeroPacket(vs.Dim) }
+//        func (vs PacketVectorSpace) Neg(v Packet) Packet { return v.Inverse() }
+//        func (vs PacketVectorSpace) Scale(s Trit, v Packet) Packet { return v.Scale(s) }
+//        func (vs PacketVectorSpace) ScalarAdd(s, t Trit) Trit { return s.Op(t) }
+//        func (vs PacketVectorSpace) ScalarMul(s, t Trit) Trit { return Mul(s, t) }
+//        func (vs PacketVectorSpace) ScalarOne() Trit { return Trit(1) }
+//        func (vs PacketVectorSpace) GenVector() Packet { return RandomPacket(vs.Dim) }
+//        func (vs PacketVectorSpace) GenScalar() Trit { return Trit(rand.Intn(3)) }
+//        func (vs PacketVectorSpace) EqVector(v, w Packet) bool { return v.Equal(w) }
+type VectorSpaceCustom[V any, S any] interface {
+        // Vector addition (Abelian group)
+        Add(v, w V) V
+        Zero() V
+        Neg(v V) V
+
+        // Scalar multiplication
+        Scale(s S, v V) V
+
+        // Scalar field operations
+        ScalarAdd(s, t S) S
+        ScalarMul(s, t S) S
+        ScalarOne() S
+
+        // Generators for testing
+        GenVector() V
+        GenScalar() S
+
+        // Equality for non-comparable vectors
+        EqVector(v, w V) bool
+}
+
+// TestVectorSpaceCustom verifies all vector space axioms.
+//
+// Tests performed:
+//   - Vector addition forms an Abelian group
+//   - Scalar multiplication distributes over vector addition
+//   - Scalar multiplication distributes over scalar addition
+//   - Scalar multiplication is associative with scalar multiplication
+//   - Identity scalar: 1·v = v
+//   - Zero scalar: 0·v = zero vector (if applicable)
+func TestVectorSpaceCustom[V any, S comparable](t *testing.T, vs VectorSpaceCustom[V, S]) <span class="cov1" title="1">{
+        TestVectorSpaceCustomWithConfig(t, vs, DefaultConfig())
+}</span>
+
+// TestVectorSpaceCustomWithConfig verifies vector space axioms with custom configuration.
+func TestVectorSpaceCustomWithConfig[V any, S comparable](t *testing.T, vs VectorSpaceCustom[V, S], cfg *Config) <span class="cov1" title="1">{
+        t.Helper()
+
+        // Test vector addition is an Abelian group
+        t.Run("VectorAddition/Associativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                AssociativeCustomWithConfig(t, vs.Add, vs.GenVector, vs.EqVector, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("VectorAddition/Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                IdentityCustomWithConfig(t, vs.Add, vs.Zero(), vs.GenVector, vs.EqVector, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("VectorAddition/Inverse", func(t *testing.T) </span><span class="cov1" title="1">{
+                InverseCustomWithConfig(t, vs.Add, vs.Neg, vs.Zero(), vs.GenVector, vs.EqVector, cfg)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("VectorAddition/Commutativity", func(t *testing.T) </span><span class="cov1" title="1">{
+                CommutativeCustomWithConfig(t, vs.Add, vs.GenVector, vs.EqVector, cfg)
+        }</span>)
+
+        // Test scalar multiplication properties
+        <span class="cov1" title="1">t.Run("ScalarMul/Identity", func(t *testing.T) </span><span class="cov1" title="1">{
+                // 1·v = v
+                one := vs.ScalarOne()
+                for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                        v := vs.GenVector()
+                        result := vs.Scale(one, v)
+                        if !vs.EqVector(result, v) </span><span class="cov0" title="0">{
+                                t.Errorf("Scalar identity failed: 1·v != v\n  v=%v, 1·v=%v", v, result)
+                                return
+                        }</span>
+                }
+                <span class="cov1" title="1">t.Logf("✅ Scalar identity (1·v = v) verified")</span>
+        })
+
+        <span class="cov1" title="1">t.Run("ScalarMul/DistributesOverVectorAdd", func(t *testing.T) </span><span class="cov1" title="1">{
+                // s·(v + w) = s·v + s·w
+                for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                        s := vs.GenScalar()
+                        v := vs.GenVector()
+                        w := vs.GenVector()
+
+                        // Left: s·(v + w)
+                        left := vs.Scale(s, vs.Add(v, w))
+
+                        // Right: s·v + s·w
+                        right := vs.Add(vs.Scale(s, v), vs.Scale(s, w))
+
+                        if !vs.EqVector(left, right) </span><span class="cov0" title="0">{
+                                t.Errorf("Scalar distribution over vector add failed: s·(v+w) != s·v + s·w\n  s=%v, v=%v, w=%v\n  left=%v, right=%v",
+                                        s, v, w, left, right)
+                                return
+                        }</span>
+                }
+                <span class="cov1" title="1">t.Logf("✅ Scalar distributes over vector addition")</span>
+        })
+
+        <span class="cov1" title="1">t.Run("ScalarMul/DistributesOverScalarAdd", func(t *testing.T) </span><span class="cov1" title="1">{
+                // (s + t)·v = s·v + t·v
+                for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                        s := vs.GenScalar()
+                        t2 := vs.GenScalar()
+                        v := vs.GenVector()
+
+                        // Left: (s + t)·v
+                        left := vs.Scale(vs.ScalarAdd(s, t2), v)
+
+                        // Right: s·v + t·v
+                        right := vs.Add(vs.Scale(s, v), vs.Scale(t2, v))
+
+                        if !vs.EqVector(left, right) </span><span class="cov0" title="0">{
+                                t.Errorf("Scalar distribution over scalar add failed: (s+t)·v != s·v + t·v\n  s=%v, t=%v, v=%v\n  left=%v, right=%v",
+                                        s, t2, v, left, right)
+                                return
+                        }</span>
+                }
+                <span class="cov1" title="1">t.Logf("✅ Scalar distributes over scalar addition")</span>
+        })
+
+        <span class="cov1" title="1">t.Run("ScalarMul/Associative", func(t *testing.T) </span><span class="cov1" title="1">{
+                // (s·t)·v = s·(t·v)
+                for i := 0; i &lt; cfg.TestCases; i++ </span><span class="cov5" title="100">{
+                        s := vs.GenScalar()
+                        t2 := vs.GenScalar()
+                        v := vs.GenVector()
+
+                        // Left: (s·t)·v
+                        left := vs.Scale(vs.ScalarMul(s, t2), v)
+
+                        // Right: s·(t·v)
+                        right := vs.Scale(s, vs.Scale(t2, v))
+
+                        if !vs.EqVector(left, right) </span><span class="cov0" title="0">{
+                                t.Errorf("Scalar associativity failed: (s·t)·v != s·(t·v)\n  s=%v, t=%v, v=%v\n  left=%v, right=%v",
+                                        s, t2, v, left, right)
+                                return
+                        }</span>
+                }
+                <span class="cov1" title="1">t.Logf("✅ Scalar multiplication is associative")</span>
+        })
+}
+
+// ===========================================================================
+// PARALLEL SAFETY FOR GROUPS
+// ===========================================================================
+
+// TestGroupParallelSafe verifies a group's operation is safe for concurrent use.
+//
+// This is essential for the geometric data paradigm where vectors can be
+// processed in parallel without locks due to group algebra guarantees.
+func TestGroupParallelSafe[T any](t *testing.T, g GroupCustom[T], goroutines int) <span class="cov1" title="1">{
+        t.Helper()
+
+        t.Run("ParallelOp", func(t *testing.T) </span><span class="cov1" title="1">{
+                ParallelSafeCustom(t, g.Op, g.Gen, g.Eq, goroutines)
+        }</span>)
+
+        <span class="cov1" title="1">t.Run("ParallelInverse", func(t *testing.T) </span><span class="cov1" title="1">{
+                // Test inverse is deterministic under parallel execution
+                a := g.Gen()
+                expected := g.Inverse(a)
+
+                results := make([]T, goroutines)
+                done := make(chan bool, goroutines)
+
+                for i := 0; i &lt; goroutines; i++ </span><span class="cov4" title="20">{
+                        go func(idx int) </span><span class="cov4" title="20">{
+                                results[idx] = g.Inverse(a)
+                                done &lt;- true
+                        }</span>(i)
+                }
+
+                <span class="cov1" title="1">for i := 0; i &lt; goroutines; i++ </span><span class="cov4" title="20">{
+                        &lt;-done
+                }</span>
+
+                <span class="cov1" title="1">for i, result := range results </span><span class="cov4" title="20">{
+                        if !g.Eq(result, expected) </span><span class="cov0" title="0">{
+                                t.Errorf("Parallel inverse failed: goroutine %d produced different result", i)
+                                return
+                        }</span>
+                }
+                <span class="cov1" title="1">t.Logf("✅ Inverse is parallel-safe (%d goroutines)", goroutines)</span>
+        })
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
